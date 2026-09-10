@@ -126,7 +126,7 @@
   <div id="auth-screen">
     <div class="auth-card">
       <h2 id="auth-title">Login to FlashTalk</h2>
-      <form id="auth-form" onsubmit="handleAuth(event)">
+      <form id="auth-form">
         <div class="input-group">
           <label for="auth-email">Email Address</label>
           <input type="email" id="auth-email" required placeholder="user@example.com">
@@ -141,7 +141,7 @@
         </div>
         <button type="submit" class="btn" id="auth-submit-btn">Sign In</button>
       </form>
-      <div class="auth-toggle" onclick="toggleAuthMode()" id="auth-toggle-btn">Need an account? Register</div>
+      <div class="auth-toggle" id="auth-toggle-btn">Need an account? Register</div>
     </div>
   </div>
 
@@ -271,11 +271,10 @@
   </div>
 
   <script>
-    // --- SUPABASE CONFIGURATION ---
     const SUPABASE_URL = "https://ssbgkbwnuqxyywgcvvqs.supabase.co";
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzYmdrYndudXF4eXl3Z2N2dnFzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkwNTUyODcsImV4cCI6MjEwNDYzMTI4N30.y6stuaVrkaIBWxnqySPXFOgNdn64s2C1nVcWkaTbRQk";
-    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+    let supabaseClient = null;
     let currentUser = JSON.parse(sessionStorage.getItem('ch_user') || 'null');
     let isRegister = false;
     let currentTab = 'public';
@@ -286,6 +285,30 @@
     let discussions = [];
     let groups = [];
     let messages = [];
+
+    // Safely attach listeners once DOM is ready
+    document.addEventListener('DOMContentLoaded', () => {
+      try {
+        if (window.supabase && window.supabase.createClient) {
+          supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        } else {
+          alert("Database library failed to load. Please disable any active ad-blockers and refresh.");
+          return;
+        }
+      } catch (err) {
+        console.error("Supabase initialization failed:", err);
+      }
+
+      const authForm = document.getElementById('auth-form');
+      const authToggleBtn = document.getElementById('auth-toggle-btn');
+
+      if (authForm) authForm.addEventListener('submit', handleAuth);
+      if (authToggleBtn) authToggleBtn.addEventListener('click', toggleAuthMode);
+
+      if (currentUser) {
+        initApp();
+      }
+    });
 
     async function initApp() {
       if (!currentUser) return;
@@ -299,23 +322,25 @@
     }
 
     async function fetchAllData() {
-      const { data: u } = await supabase.from('profiles').select('*');
+      if (!supabaseClient) return;
+      const { data: u } = await supabaseClient.from('profiles').select('*');
       allUsers = u || [];
       const updatedSelf = allUsers.find(x => x.id === currentUser.id);
       if (updatedSelf) currentUser = updatedSelf;
 
-      const { data: d } = await supabase.from('discussions').select('*');
+      const { data: d } = await supabaseClient.from('discussions').select('*');
       discussions = d || [];
 
-      const { data: g } = await supabase.from('groups').select('*');
+      const { data: g } = await supabaseClient.from('groups').select('*');
       groups = g || [];
 
-      const { data: m } = await supabase.from('messages').select('*').order('created_at', { ascending: true });
+      const { data: m } = await supabaseClient.from('messages').select('*').order('created_at', { ascending: true });
       messages = m || [];
     }
 
     function subscribeRealtime() {
-      supabase.channel('public-db-changes')
+      if (!supabaseClient) return;
+      supabaseClient.channel('public-db-changes')
         .on('postgres_changes', { event: '*', schema: 'public' }, async () => {
           await fetchAllData();
           renderCurrentView();
@@ -332,13 +357,17 @@
     }
 
     async function handleAuth(e) {
-      e.preventDefault();
+      if (e) e.preventDefault(); // Prevents page reload on enter
+      if (!supabaseClient) return alert("Database is not connected.");
+
       const email = document.getElementById('auth-email').value.trim().toLowerCase();
       const password = document.getElementById('auth-password').value.trim();
 
       if (isRegister) {
         const username = document.getElementById('auth-username').value.trim();
-        const { data: existing } = await supabase.from('profiles').select('*').or(`email.eq.${email},username.eq.${username}`);
+        if (!username) return alert('Please enter a username.');
+
+        const { data: existing } = await supabaseClient.from('profiles').select('*').or(`email.eq.${email},username.eq.${username}`);
         if (existing && existing.length > 0) {
           alert('Email or Username already taken.');
           return;
@@ -355,11 +384,13 @@
           settings: { displayMode: 'username', fontSize: 'medium', theme: 'dark', accentColor: '#6366f1' }
         };
 
-        await supabase.from('profiles').insert([newUser]);
+        const { error } = await supabaseClient.from('profiles').insert([newUser]);
+        if (error) return alert("Error creating account: " + error.message);
+
         currentUser = newUser;
       } else {
-        const { data } = await supabase.from('profiles').select('*').eq('email', email).eq('password', password).single();
-        if (!data) {
+        const { data, error } = await supabaseClient.from('profiles').select('*').eq('email', email).eq('password', password).maybeSingle();
+        if (error || !data) {
           alert('Invalid credentials.');
           return;
         }
@@ -462,7 +493,7 @@
 
     function renderAvatarHTML(user) {
       if (user.pfp) return `<img class="avatar" src="${user.pfp}">`;
-      return `<div class="avatar">${user.username.charAt(0).toUpperCase()}</div>`;
+      return `<div class="avatar">${user.username ? user.username.charAt(0).toUpperCase() : '?'}</div>`;
     }
 
     function handleSearch(query) {
@@ -483,7 +514,7 @@
       let friends = currentUser.friends || [];
       friends = friends.includes(userId) ? friends.filter(id => id !== userId) : [...friends, userId];
       currentUser.friends = friends;
-      await supabase.from('profiles').update({ friends }).eq('id', currentUser.id);
+      await supabaseClient.from('profiles').update({ friends }).eq('id', currentUser.id);
       renderCurrentView();
     }
 
@@ -519,7 +550,7 @@
       e.preventDefault();
       const input = document.getElementById('message-input');
       const text = input.value.trim();
-      if (!text) return;
+      if (!text || !supabaseClient) return;
 
       const newMsg = {
         id: 'msg_' + Date.now(),
@@ -530,7 +561,7 @@
         text
       };
 
-      await supabase.from('messages').insert([newMsg]);
+      await supabaseClient.from('messages').insert([newMsg]);
       input.value = '';
     }
 
@@ -559,7 +590,7 @@
         accentColor: document.getElementById('settings-accent-color').value
       };
 
-      await supabase.from('profiles').update({ username: currentUser.username, bio: currentUser.bio, settings: currentUser.settings, pfp: tempUploadedPFP !== null ? tempUploadedPFP : currentUser.pfp }).eq('id', currentUser.id);
+      await supabaseClient.from('profiles').update({ username: currentUser.username, bio: currentUser.bio, settings: currentUser.settings, pfp: tempUploadedPFP !== null ? tempUploadedPFP : currentUser.pfp }).eq('id', currentUser.id);
       applyUserSettings();
       alert('Settings saved!');
     }
@@ -603,19 +634,17 @@
 
     async function submitModal() {
       const name = document.getElementById('modal-input-name').value.trim();
-      if (!name) return;
+      if (!name || !supabaseClient) return;
 
       if (modalType === 'discussion') {
-        await supabase.from('discussions').insert([{ id: 'disc_' + Date.now(), title: name, author_id: currentUser.id, author_name: currentUser.username }]);
+        await supabaseClient.from('discussions').insert([{ id: 'disc_' + Date.now(), title: name, author_id: currentUser.id, author_name: currentUser.username }]);
       } else if (modalType === 'group') {
         const members = Array.from(document.querySelectorAll('.g-member:checked')).map(cb => cb.value);
         members.push(currentUser.id);
-        await supabase.from('groups').insert([{ id: 'grp_' + Date.now(), name, members }]);
+        await supabaseClient.from('groups').insert([{ id: 'grp_' + Date.now(), name, members }]);
       }
       closeModal();
     }
-
-    if (currentUser) initApp();
   </script>
 </body>
 </html>
