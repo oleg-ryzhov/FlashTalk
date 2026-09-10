@@ -1,650 +1,70 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>FlashTalk</title>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <style>
-    :root {
-      --bg-dark: #121214;
-      --bg-panel: #1e1e24;
-      --bg-panel-light: #2b2b36;
-      --bg-input: #18181c;
-      --accent: #6366f1;
-      --accent-hover: #4f46e5;
-      --text-main: #f3f4f6;
-      --text-muted: #9ca3af;
-      --border-color: #374151;
-      --danger: #ef4444;
-      --base-font-size: 14px;
-    }
+async function handleAuth(e) {
+  if (e) e.preventDefault();
+  if (!supabaseClient) return alert("Database is not connected.");
 
-    body.theme-high-contrast {
-      --bg-dark: #000000;
-      --bg-panel: #0d0d0d;
-      --bg-panel-light: #1a1a1a;
-      --bg-input: #000000;
-      --text-main: #ffffff;
-      --text-muted: #e5e7eb;
-      --border-color: #ffffff;
-    }
+  const email = document.getElementById('auth-email').value.trim().toLowerCase();
+  const password = document.getElementById('auth-password').value.trim();
 
-    body.theme-light {
-      --bg-dark: #f3f4f6;
-      --bg-panel: #ffffff;
-      --bg-panel-light: #e5e7eb;
-      --bg-input: #ffffff;
-      --text-main: #111827;
-      --text-muted: #4b5563;
-      --border-color: #d1d5db;
-    }
+  if (isRegister) {
+    const username = document.getElementById('auth-username').value.trim();
+    if (!username) return alert('Please enter a username.');
 
-    body.font-small { --base-font-size: 12px; }
-    body.font-medium { --base-font-size: 14px; }
-    body.font-large { --base-font-size: 17px; }
-
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-    html { font-size: var(--base-font-size); }
-    body { background: var(--bg-dark); color: var(--text-main); height: 100vh; overflow: hidden; display: flex; }
-
-    #auth-screen { position: fixed; inset: 0; background: var(--bg-dark); z-index: 100; display: flex; justify-content: center; align-items: center; }
-    .auth-card { background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 12px; padding: 32px; width: 380px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
-    .auth-card h2 { text-align: center; margin-bottom: 20px; font-size: 1.5rem; }
-    .input-group { margin-bottom: 16px; }
-    .input-group label { display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 6px; }
-    .input-group input, .input-group select, .input-group textarea { width: 100%; padding: 10px 12px; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); outline: none; font-size: 0.95rem; }
-    .input-group input:focus, .input-group select:focus, .input-group textarea:focus { border-color: var(--accent); }
-    .btn { width: 100%; padding: 10px; background: var(--accent); color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
-    .btn:hover { background: var(--accent-hover); }
-    .btn-secondary { background: var(--bg-panel-light); border: 1px solid var(--border-color); color: var(--text-main); }
-    .btn-secondary:hover { background: var(--border-color); }
-    .btn-danger { background: var(--danger); }
-    .auth-toggle { margin-top: 16px; text-align: center; font-size: 0.85rem; color: var(--text-muted); cursor: pointer; }
-    .auth-toggle:hover { color: var(--text-main); text-decoration: underline; }
-
-    #app { display: none; width: 100vw; height: 100vh; flex-direction: row; }
-    #nav-bar { width: 70px; background: var(--bg-panel); border-right: 1px solid var(--border-color); display: flex; flex-direction: column; align-items: center; padding: 20px 0; gap: 16px; }
-    .nav-icon { width: 44px; height: 44px; border-radius: 10px; background: var(--bg-panel-light); display: flex; justify-content: center; align-items: center; cursor: pointer; color: var(--text-muted); transition: 0.2s; font-size: 1.2rem; position: relative; }
-    .nav-icon:hover, .nav-icon.active { background: var(--accent); color: white; }
-    .user-profile-btn { margin-top: auto; border-radius: 50%; overflow: hidden; background: #4b5563; }
-    .user-profile-btn img { width: 100%; height: 100%; object-fit: cover; }
-
-    #sub-sidebar { width: 280px; background: var(--bg-panel); border-right: 1px solid var(--border-color); display: flex; flex-direction: column; }
-    .sidebar-header { padding: 16px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; }
-    .sidebar-header h3 { font-size: 1.1rem; }
-    .sidebar-content { flex: 1; overflow-y: auto; padding: 10px; }
-    .list-item { padding: 12px; border-radius: 8px; cursor: pointer; margin-bottom: 4px; background: transparent; transition: background 0.2s; display: flex; align-items: center; gap: 10px; }
-    .list-item:hover { background: var(--bg-panel-light); }
-    .list-item.active { background: var(--bg-panel-light); border-left: 3px solid var(--accent); }
-    .list-item .title { font-weight: 600; font-size: 0.95rem; color: var(--text-main); }
-    .list-item .subtitle { font-size: 0.8rem; color: var(--text-muted); margin-top: 2px; }
-    .list-item .item-info { flex: 1; overflow: hidden; }
-    .list-item .item-info div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-    .avatar { width: 38px; height: 38px; border-radius: 50%; background: var(--bg-panel-light); display: flex; align-items: center; justify-content: center; font-weight: bold; color: var(--text-main); flex-shrink: 0; object-fit: cover; border: 1px solid var(--border-color); }
-
-    .search-box { padding: 10px; border-bottom: 1px solid var(--border-color); }
-    .search-box input { width: 100%; padding: 8px 12px; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-size: 0.85rem; outline: none; }
-
-    #main-content { flex: 1; display: flex; flex-direction: column; background: var(--bg-dark); position: relative; }
-
-    #main-chat { flex: 1; display: flex; flex-direction: column; height: 100%; }
-    #chat-header { height: 60px; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; padding: 0 20px; background: var(--bg-panel); }
-    #messages-container { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
-    
-    .message { display: flex; gap: 10px; max-width: 75%; }
-    .message.sent { align-self: flex-end; flex-direction: row-reverse; }
-    .message.received { align-self: flex-start; }
-    .message-content { display: flex; flex-direction: column; }
-    .message.sent .message-content { align-items: flex-end; }
-    .message-meta { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px; display: flex; gap: 8px; }
-    .message-bubble { padding: 10px 14px; border-radius: 10px; font-size: 0.95rem; line-height: 1.4; word-break: break-word; }
-    .message.sent .message-bubble { background: var(--accent); color: white; border-bottom-right-radius: 2px; }
-    .message.received .message-bubble { background: var(--bg-panel-light); color: var(--text-main); border-bottom-left-radius: 2px; }
-
-    #message-input-area { padding: 16px; background: var(--bg-panel); border-top: 1px solid var(--border-color); display: flex; gap: 12px; }
-    #message-input-area input { flex: 1; padding: 12px 16px; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-main); outline: none; }
-    #message-input-area button { width: auto; padding: 0 20px; }
-
-    #settings-view { flex: 1; padding: 30px; overflow-y: auto; display: none; max-width: 700px; margin: 0 auto; width: 100%; }
-    .settings-section { background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 10px; padding: 20px; margin-bottom: 24px; }
-    .settings-section h4 { margin-bottom: 16px; font-size: 1.1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 8px; }
-    .pfp-picker { display: flex; align-items: center; gap: 20px; margin-bottom: 16px; }
-    .pfp-picker img { width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 2px solid var(--accent); }
-    .bio-counter { font-size: 0.75rem; color: var(--text-muted); text-align: right; margin-top: 4px; }
-
-    .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: none; justify-content: center; align-items: center; z-index: 200; }
-    .modal-card { background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 12px; padding: 24px; width: 400px; max-height: 80vh; display: flex; flex-direction: column; }
-    .modal-card h3 { margin-bottom: 16px; }
-    .user-select-list { flex: 1; overflow-y: auto; max-height: 200px; margin: 12px 0; border: 1px solid var(--border-color); border-radius: 6px; padding: 8px; }
-    .user-select-item { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 0.9rem; }
-  </style>
-</head>
-<body>
-
-  <div id="auth-screen">
-    <div class="auth-card">
-      <h2 id="auth-title">Login to FlashTalk</h2>
-      <form id="auth-form">
-        <div class="input-group">
-          <label for="auth-email">Email Address</label>
-          <input type="email" id="auth-email" required placeholder="user@example.com">
-        </div>
-        <div class="input-group" id="username-group" style="display: none;">
-          <label for="auth-username">Username</label>
-          <input type="text" id="auth-username" placeholder="johndoe">
-        </div>
-        <div class="input-group">
-          <label for="auth-password">Password</label>
-          <input type="password" id="auth-password" required placeholder="••••••••">
-        </div>
-        <button type="submit" class="btn" id="auth-submit-btn">Sign In</button>
-      </form>
-      <div class="auth-toggle" id="auth-toggle-btn">Need an account? Register</div>
-    </div>
-  </div>
-
-  <div id="app">
-    <div id="nav-bar">
-      <div class="nav-icon active" onclick="switchTab('public')" title="Public Chat">🌐</div>
-      <div class="nav-icon" onclick="switchTab('discussions')" title="Public Discussions">💬</div>
-      <div class="nav-icon" onclick="switchTab('groups')" title="Private Groups">👥</div>
-      <div class="nav-icon" onclick="switchTab('dms')" title="Direct Messages">✉️</div>
-      <div class="nav-icon" onclick="switchTab('friends')" title="Friends List">🤝</div>
-      <div class="nav-icon" onclick="switchTab('search')" title="Find Users">🔍</div>
-      <div class="nav-icon" onclick="switchTab('settings')" title="Account & Settings">⚙️</div>
-      <div class="nav-icon user-profile-btn" id="nav-user-pfp" onclick="logout()" title="Logout">
-        <span id="nav-user-initial">U</span>
-      </div>
-    </div>
-
-    <div id="sub-sidebar">
-      <div class="sidebar-header">
-        <h3 id="sidebar-title">Public Chat</h3>
-        <button id="sidebar-action-btn" class="btn" style="width: auto; padding: 4px 8px; font-size: 0.8rem; display: none;"></button>
-      </div>
-      <div class="search-box" id="sidebar-search-container" style="display: none;">
-        <input type="text" id="sidebar-search-input" placeholder="Search users..." oninput="handleSearch(this.value)">
-      </div>
-      <div class="sidebar-content" id="sidebar-list"></div>
-    </div>
-
-    <div id="main-content">
-      <div id="main-chat">
-        <div id="chat-header">
-          <div>
-            <h3 id="target-title">General Public Chat</h3>
-            <p id="target-subtitle" style="font-size: 0.8rem; color: var(--text-muted);">Everyone can talk here</p>
-          </div>
-        </div>
-        <div id="messages-container"></div>
-        <form id="message-input-area" onsubmit="sendMessage(event)">
-          <input type="text" id="message-input" placeholder="Type a message..." required autocomplete="off">
-          <button type="submit" class="btn">Send</button>
-        </form>
-      </div>
-
-      <div id="settings-view">
-        <h2 style="margin-bottom: 20px;">Account & Accessibility Settings</h2>
-        <div class="settings-section">
-          <h4>Profile Customization</h4>
-          <div class="pfp-picker">
-            <img id="settings-pfp-preview" src="" alt="Profile Preview" style="display:none;">
-            <div id="settings-pfp-placeholder" class="avatar" style="width: 80px; height: 80px; font-size: 2rem;">?</div>
-            <div>
-              <label class="btn btn-secondary" style="display: inline-block; width: auto; cursor: pointer; padding: 6px 12px; font-size: 0.85rem;">
-                Upload Picture
-                <input type="file" id="pfp-file-input" accept="image/*" style="display:none;" onchange="handlePFPUpload(event)">
-              </label>
-              <button type="button" class="btn btn-danger" style="width: auto; padding: 6px 12px; font-size: 0.85rem; margin-left: 8px;" onclick="removePFP()">Remove</button>
-            </div>
-          </div>
-          <div class="input-group">
-            <label for="settings-username">Username</label>
-            <input type="text" id="settings-username" required>
-          </div>
-          <div class="input-group">
-            <label for="settings-bio">Bio (Max 100 characters)</label>
-            <textarea id="settings-bio" rows="2" maxlength="100" oninput="updateBioCount()"></textarea>
-            <div class="bio-counter" id="bio-char-count">0 / 100</div>
-          </div>
-        </div>
-
-        <div class="settings-section">
-          <h4>Accessibility & Display</h4>
-          <div class="input-group">
-            <label for="settings-display-mode">Display Names in Chat</label>
-            <select id="settings-display-mode">
-              <option value="username">Username Only (@johndoe)</option>
-              <option value="email">Email Only (user@example.com)</option>
-              <option value="both">Both (Username & Email)</option>
-            </select>
-          </div>
-          <div class="input-group">
-            <label for="settings-font-size">Font Size</label>
-            <select id="settings-font-size">
-              <option value="small">Small</option>
-              <option value="medium" selected>Medium (Default)</option>
-              <option value="large">Large</option>
-            </select>
-          </div>
-          <div class="input-group">
-            <label for="settings-theme">Theme Mode</label>
-            <select id="settings-theme">
-              <option value="dark">Dark Theme (Default)</option>
-              <option value="light">Light Theme</option>
-              <option value="high-contrast">High Contrast</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="settings-section">
-          <h4>Personalization</h4>
-          <div class="input-group">
-            <label for="settings-accent-color">Accent Theme Color</label>
-            <input type="color" id="settings-accent-color" value="#6366f1" style="height: 40px; cursor: pointer;">
-          </div>
-        </div>
-
-        <button class="btn" onclick="saveUserSettings()">Save Settings</button>
-      </div>
-    </div>
-  </div>
-
-  <div class="modal" id="create-modal">
-    <div class="modal-card">
-      <h3 id="modal-title">Create Item</h3>
-      <div class="input-group">
-        <label for="modal-input-name">Title / Group Name</label>
-        <input type="text" id="modal-input-name" required>
-      </div>
-      <div id="group-user-selection" style="display: none;">
-        <label style="font-size: 0.85rem; color: var(--text-muted);">Select Members:</label>
-        <div class="user-select-list" id="modal-user-list"></div>
-      </div>
-      <div style="display: flex; gap: 8px; margin-top: 12px;">
-        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-        <button type="button" class="btn" onclick="submitModal()">Create</button>
-      </div>
-    </div>
-  </div>
-
-  <script>
-    const SUPABASE_URL = "https://ssbgkbwnuqxyywgcvvqs.supabase.co";
-    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzYmdrYndudXF4eXl3Z2N2dnFzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkwNTUyODcsImV4cCI6MjEwNDYzMTI4N30.y6stuaVrkaIBWxnqySPXFOgNdn64s2C1nVcWkaTbRQk";
-
-    let supabaseClient = null;
-    let currentUser = JSON.parse(sessionStorage.getItem('ch_user') || 'null');
-    let isRegister = false;
-    let currentTab = 'public';
-    let activeTarget = { type: 'public', id: 'global' };
-    let tempUploadedPFP = null;
-
-    let allUsers = [];
-    let discussions = [];
-    let groups = [];
-    let messages = [];
-
-    // Safely attach listeners once DOM is ready
-    document.addEventListener('DOMContentLoaded', () => {
-      try {
-        if (window.supabase && window.supabase.createClient) {
-          supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        } else {
-          alert("Database library failed to load. Please disable any active ad-blockers and refresh.");
-          return;
-        }
-      } catch (err) {
-        console.error("Supabase initialization failed:", err);
-      }
-
-      const authForm = document.getElementById('auth-form');
-      const authToggleBtn = document.getElementById('auth-toggle-btn');
-
-      if (authForm) authForm.addEventListener('submit', handleAuth);
-      if (authToggleBtn) authToggleBtn.addEventListener('click', toggleAuthMode);
-
-      if (currentUser) {
-        initApp();
+    // 1. Register user via Supabase Auth (sends confirmation email automatically)
+    const { data, error } = await supabaseClient.auth.signUp({
+      email: email,
+      password: password,
+      options: {
+        data: { username: username },
+        emailRedirectTo: 'https://oleg-ryzhov.github.io/FlashTalk/'
       }
     });
 
-    async function initApp() {
-      if (!currentUser) return;
-      document.getElementById('auth-screen').style.display = 'none';
-      document.getElementById('app').style.display = 'flex';
+    if (error) return alert("Registration Error: " + error.message);
 
-      await fetchAllData();
-      subscribeRealtime();
-      applyUserSettings();
-      switchTab('public');
-    }
+    alert("📩 Confirmation email sent!\n\nPlease check your inbox (" + email + ") and click the verification link before logging in.");
+    toggleAuthMode(); // Switch back to Sign In tab
+  } else {
+    // 2. Log in user via Supabase Auth
+    const { data, error } = await supabaseClient.auth.signInWithPassword({
+      email: email,
+      password: password
+    });
 
-    async function fetchAllData() {
-      if (!supabaseClient) return;
-      const { data: u } = await supabaseClient.from('profiles').select('*');
-      allUsers = u || [];
-      const updatedSelf = allUsers.find(x => x.id === currentUser.id);
-      if (updatedSelf) currentUser = updatedSelf;
-
-      const { data: d } = await supabaseClient.from('discussions').select('*');
-      discussions = d || [];
-
-      const { data: g } = await supabaseClient.from('groups').select('*');
-      groups = g || [];
-
-      const { data: m } = await supabaseClient.from('messages').select('*').order('created_at', { ascending: true });
-      messages = m || [];
-    }
-
-    function subscribeRealtime() {
-      if (!supabaseClient) return;
-      supabaseClient.channel('public-db-changes')
-        .on('postgres_changes', { event: '*', schema: 'public' }, async () => {
-          await fetchAllData();
-          renderCurrentView();
-        })
-        .subscribe();
-    }
-
-    function toggleAuthMode() {
-      isRegister = !isRegister;
-      document.getElementById('auth-title').textContent = isRegister ? 'Register for FlashTalk' : 'Login to FlashTalk';
-      document.getElementById('auth-submit-btn').textContent = isRegister ? 'Sign Up' : 'Sign In';
-      document.getElementById('auth-toggle-btn').textContent = isRegister ? 'Already have an account? Login' : 'Need an account? Register';
-      document.getElementById('username-group').style.display = isRegister ? 'block' : 'none';
-    }
-
-    async function handleAuth(e) {
-      if (e) e.preventDefault(); // Prevents page reload on enter
-      if (!supabaseClient) return alert("Database is not connected.");
-
-      const email = document.getElementById('auth-email').value.trim().toLowerCase();
-      const password = document.getElementById('auth-password').value.trim();
-
-      if (isRegister) {
-        const username = document.getElementById('auth-username').value.trim();
-        if (!username) return alert('Please enter a username.');
-
-        const { data: existing } = await supabaseClient.from('profiles').select('*').or(`email.eq.${email},username.eq.${username}`);
-        if (existing && existing.length > 0) {
-          alert('Email or Username already taken.');
-          return;
-        }
-
-        const newUser = {
-          id: 'usr_' + Date.now(),
-          email,
-          username,
-          password,
-          pfp: '',
-          bio: '',
-          friends: [],
-          settings: { displayMode: 'username', fontSize: 'medium', theme: 'dark', accentColor: '#6366f1' }
-        };
-
-        const { error } = await supabaseClient.from('profiles').insert([newUser]);
-        if (error) return alert("Error creating account: " + error.message);
-
-        currentUser = newUser;
-      } else {
-        const { data, error } = await supabaseClient.from('profiles').select('*').eq('email', email).eq('password', password).maybeSingle();
-        if (error || !data) {
-          alert('Invalid credentials.');
-          return;
-        }
-        currentUser = data;
+    if (error) {
+      if (error.message.includes("Email not confirmed")) {
+        return alert("⚠️ Please confirm your email before signing in. Check your inbox/spam folder.");
       }
-
-      sessionStorage.setItem('ch_user', JSON.stringify(currentUser));
-      initApp();
+      return alert("Login error: " + error.message);
     }
 
-    function logout() {
-      sessionStorage.removeItem('ch_user');
-      location.reload();
-    }
+    // 3. Fetch or sync user profile
+    let { data: profile } = await supabaseClient
+      .from('profiles')
+      .select('*')
+      .eq('id', data.user.id)
+      .maybeSingle();
 
-    function applyUserSettings() {
-      if (!currentUser || !currentUser.settings) return;
-      const s = currentUser.settings;
-      document.body.className = `font-${s.fontSize || 'medium'} ${s.theme !== 'dark' ? 'theme-' + s.theme : ''}`;
-      document.documentElement.style.setProperty('--accent', s.accentColor || '#6366f1');
-
-      const pfpNav = document.getElementById('nav-user-pfp');
-      if (currentUser.pfp) {
-        pfpNav.innerHTML = `<img src="${currentUser.pfp}">`;
-      } else {
-        pfpNav.innerHTML = `<span>${currentUser.username.charAt(0).toUpperCase()}</span>`;
-      }
-    }
-
-    function switchTab(tab) {
-      currentTab = tab;
-      const tabNames = ['public', 'discussions', 'groups', 'dms', 'friends', 'search', 'settings'];
-      document.querySelectorAll('.nav-icon').forEach((el, idx) => {
-        el.classList.toggle('active', tabNames[idx] === tab);
-      });
-
-      document.getElementById('sidebar-action-btn').style.display = (tab === 'discussions' || tab === 'groups') ? 'block' : 'none';
-      document.getElementById('sidebar-search-container').style.display = tab === 'search' ? 'block' : 'none';
-      document.getElementById('main-chat').style.display = tab === 'settings' ? 'none' : 'flex';
-      document.getElementById('settings-view').style.display = tab === 'settings' ? 'block' : 'none';
-
-      if (tab === 'public') selectTarget('public', 'global', 'General Public Chat', 'Everyone can talk here');
-      if (tab === 'settings') populateSettingsForm();
-      renderCurrentView();
-    }
-
-    function renderCurrentView() {
-      renderSidebarList();
-      if (currentTab !== 'settings') renderMessages();
-    }
-
-    function getFormattedUserDisplay(user) {
-      if (!user) return 'Unknown User';
-      const mode = (currentUser.settings && currentUser.settings.displayMode) || 'username';
-      if (mode === 'email') return user.email;
-      if (mode === 'both') return `@${user.username} (${user.email})`;
-      return `@${user.username}`;
-    }
-
-    function renderSidebarList() {
-      const listContainer = document.getElementById('sidebar-list');
-      listContainer.innerHTML = '';
-
-      if (currentTab === 'public') {
-        listContainer.innerHTML = `<div class="list-item active"><div class="title"># General Chat</div></div>`;
-      } else if (currentTab === 'discussions') {
-        document.getElementById('sidebar-action-btn').textContent = '+ New';
-        document.getElementById('sidebar-action-btn').onclick = () => openCreateModal('discussion');
-        discussions.forEach(d => {
-          const div = document.createElement('div');
-          div.className = `list-item ${activeTarget.id === d.id ? 'active' : ''}`;
-          div.onclick = () => selectTarget('discussion', d.id, d.title, `By ${d.author_name}`);
-          div.innerHTML = `<div class="title">📌 ${d.title}</div><div class="subtitle">By ${d.author_name}</div>`;
-          listContainer.appendChild(div);
-        });
-      } else if (currentTab === 'groups') {
-        document.getElementById('sidebar-action-btn').textContent = '+ Group';
-        document.getElementById('sidebar-action-btn').onclick = () => openCreateModal('group');
-        groups.filter(g => g.members && g.members.includes(currentUser.id)).forEach(g => {
-          const div = document.createElement('div');
-          div.className = `list-item ${activeTarget.id === g.id ? 'active' : ''}`;
-          div.onclick = () => selectTarget('group', g.id, g.name, `${g.members.length} members`);
-          div.innerHTML = `<div class="title">🔒 ${g.name}</div><div class="subtitle">${g.members.length} members</div>`;
-          listContainer.appendChild(div);
-        });
-      } else if (currentTab === 'friends') {
-        (currentUser.friends || []).forEach(fid => {
-          const u = allUsers.find(x => x.id === fid);
-          if (!u) return;
-          const div = document.createElement('div');
-          div.className = 'list-item';
-          div.innerHTML = `${renderAvatarHTML(u)}<div class="item-info"><div class="title">${getFormattedUserDisplay(u)}</div></div>`;
-          div.onclick = () => { selectTarget('dm', u.id, getFormattedUserDisplay(u), u.bio || ''); switchTab('dms'); };
-          listContainer.appendChild(div);
-        });
-      } else if (currentTab === 'search') {
-        handleSearch(document.getElementById('sidebar-search-input').value);
-      }
-    }
-
-    function renderAvatarHTML(user) {
-      if (user.pfp) return `<img class="avatar" src="${user.pfp}">`;
-      return `<div class="avatar">${user.username ? user.username.charAt(0).toUpperCase() : '?'}</div>`;
-    }
-
-    function handleSearch(query) {
-      const listContainer = document.getElementById('sidebar-list');
-      listContainer.innerHTML = '';
-      const q = query.toLowerCase().trim();
-      allUsers.filter(u => u.id !== currentUser.id && (u.username.toLowerCase().includes(q) || u.email.toLowerCase().includes(q))).forEach(u => {
-        const isFriend = (currentUser.friends || []).includes(u.id);
-        const div = document.createElement('div');
-        div.className = 'list-item';
-        div.innerHTML = `${renderAvatarHTML(u)}<div class="item-info"><div class="title">${getFormattedUserDisplay(u)}</div></div>
-          <button class="btn ${isFriend ? 'btn-secondary' : ''}" style="width:auto;padding:4px 8px;font-size:0.75rem;" onclick="event.stopPropagation(); toggleFriend('${u.id}')">${isFriend ? 'Unfriend' : '+ Friend'}</button>`;
-        listContainer.appendChild(div);
-      });
-    }
-
-    async function toggleFriend(userId) {
-      let friends = currentUser.friends || [];
-      friends = friends.includes(userId) ? friends.filter(id => id !== userId) : [...friends, userId];
-      currentUser.friends = friends;
-      await supabaseClient.from('profiles').update({ friends }).eq('id', currentUser.id);
-      renderCurrentView();
-    }
-
-    function selectTarget(type, id, title, subtitle) {
-      activeTarget = { type, id };
-      document.getElementById('target-title').textContent = title;
-      document.getElementById('target-subtitle').textContent = subtitle;
-      renderCurrentView();
-    }
-
-    function renderMessages() {
-      const container = document.getElementById('messages-container');
-      container.innerHTML = '';
-
-      const filtered = messages.filter(m => {
-        if (activeTarget.type === 'public') return m.target_type === 'public';
-        if (activeTarget.type === 'dm') return m.target_type === 'dm' && ((m.sender_id === currentUser.id && m.target_id === activeTarget.id) || (m.sender_id === activeTarget.id && m.target_id === currentUser.id));
-        return m.target_type === activeTarget.type && m.target_id === activeTarget.id;
-      });
-
-      filtered.forEach(m => {
-        const isSent = m.sender_id === currentUser.id;
-        const senderUser = allUsers.find(u => u.id === m.sender_id) || { username: m.sender_name };
-        const div = document.createElement('div');
-        div.className = `message ${isSent ? 'sent' : 'received'}`;
-        div.innerHTML = `${renderAvatarHTML(senderUser)}<div class="message-content"><div class="message-meta"><span>${isSent ? 'You' : getFormattedUserDisplay(senderUser)}</span></div><div class="message-bubble">${m.text}</div></div>`;
-        container.appendChild(div);
-      });
-      container.scrollTop = container.scrollHeight;
-    }
-
-    async function sendMessage(e) {
-      e.preventDefault();
-      const input = document.getElementById('message-input');
-      const text = input.value.trim();
-      if (!text || !supabaseClient) return;
-
-      const newMsg = {
-        id: 'msg_' + Date.now(),
-        sender_id: currentUser.id,
-        sender_name: currentUser.username,
-        target_type: activeTarget.type,
-        target_id: activeTarget.id,
-        text
+    if (!profile) {
+      profile = {
+        id: data.user.id,
+        email: data.user.email,
+        username: data.user.user_metadata?.username || email.split('@')[0],
+        pfp: '',
+        bio: '',
+        friends: [],
+        settings: { displayMode: 'username', fontSize: 'medium', theme: 'dark', accentColor: '#6366f1' }
       };
-
-      await supabaseClient.from('messages').insert([newMsg]);
-      input.value = '';
+      await supabaseClient.from('profiles').upsert([profile]);
     }
 
-    function populateSettingsForm() {
-      document.getElementById('settings-username').value = currentUser.username;
-      document.getElementById('settings-bio').value = currentUser.bio || '';
-      const s = currentUser.settings || {};
-      document.getElementById('settings-display-mode').value = s.displayMode || 'username';
-      document.getElementById('settings-font-size').value = s.fontSize || 'medium';
-      document.getElementById('settings-theme').value = s.theme || 'dark';
-      document.getElementById('settings-accent-color').value = s.accentColor || '#6366f1';
-    }
+    currentUser = profile;
+    sessionStorage.setItem('ch_user', JSON.stringify(currentUser));
+    initApp();
+  }
+}
 
-    function updateBioCount() {
-      const bio = document.getElementById('settings-bio').value;
-      document.getElementById('bio-char-count').textContent = `${bio.length} / 100`;
-    }
-
-    async function saveUserSettings() {
-      currentUser.username = document.getElementById('settings-username').value.trim();
-      currentUser.bio = document.getElementById('settings-bio').value.trim();
-      currentUser.settings = {
-        displayMode: document.getElementById('settings-display-mode').value,
-        fontSize: document.getElementById('settings-font-size').value,
-        theme: document.getElementById('settings-theme').value,
-        accentColor: document.getElementById('settings-accent-color').value
-      };
-
-      await supabaseClient.from('profiles').update({ username: currentUser.username, bio: currentUser.bio, settings: currentUser.settings, pfp: tempUploadedPFP !== null ? tempUploadedPFP : currentUser.pfp }).eq('id', currentUser.id);
-      applyUserSettings();
-      alert('Settings saved!');
-    }
-
-    function handlePFPUpload(e) {
-      const file = e.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (evt) => { 
-        tempUploadedPFP = evt.target.result;
-        document.getElementById('settings-pfp-preview').src = tempUploadedPFP;
-        document.getElementById('settings-pfp-preview').style.display = 'block';
-        document.getElementById('settings-pfp-placeholder').style.display = 'none';
-      };
-      reader.readAsDataURL(file);
-    }
-
-    function removePFP() { 
-      tempUploadedPFP = ''; 
-      document.getElementById('settings-pfp-preview').style.display = 'none';
-      document.getElementById('settings-pfp-placeholder').style.display = 'flex';
-    }
-
-    let modalType = '';
-    function openCreateModal(type) {
-      modalType = type;
-      document.getElementById('create-modal').style.display = 'flex';
-      document.getElementById('modal-input-name').value = '';
-      document.getElementById('group-user-selection').style.display = type === 'group' ? 'block' : 'none';
-
-      if (type === 'group') {
-        const list = document.getElementById('modal-user-list');
-        list.innerHTML = '';
-        allUsers.filter(u => u.id !== currentUser.id).forEach(u => {
-          list.innerHTML += `<div class="user-select-item"><input type="checkbox" value="${u.id}" class="g-member"> <span>${getFormattedUserDisplay(u)}</span></div>`;
-        });
-      }
-    }
-
-    function closeModal() { document.getElementById('create-modal').style.display = 'none'; }
-
-    async function submitModal() {
-      const name = document.getElementById('modal-input-name').value.trim();
-      if (!name || !supabaseClient) return;
-
-      if (modalType === 'discussion') {
-        await supabaseClient.from('discussions').insert([{ id: 'disc_' + Date.now(), title: name, author_id: currentUser.id, author_name: currentUser.username }]);
-      } else if (modalType === 'group') {
-        const members = Array.from(document.querySelectorAll('.g-member:checked')).map(cb => cb.value);
-        members.push(currentUser.id);
-        await supabaseClient.from('groups').insert([{ id: 'grp_' + Date.now(), name, members }]);
-      }
-      closeModal();
-    }
-  </script>
-</body>
-</html>
+async function logout() {
+  if (supabaseClient) await supabaseClient.auth.signOut();
+  sessionStorage.removeItem('ch_user');
+  location.reload();
+}
