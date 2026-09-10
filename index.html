@@ -379,15 +379,26 @@
           email: email,
           password: password,
           options: {
-            data: { username: username },
-            emailRedirectTo: 'https://oleg-ryzhov.github.io/FlashTalk/'
+            data: { username: username }
           }
         });
 
         if (error) return alert("Registration Error: " + error.message);
 
-        alert("📩 Confirmation email sent!\n\nPlease check your inbox (" + email + ") and click the verification link before logging in.");
-        toggleAuthMode();
+        let profile = {
+          id: data.user.id,
+          email: email,
+          username: username,
+          pfp: '',
+          bio: '',
+          friends: [],
+          settings: { displayMode: 'username', fontSize: 'medium', theme: 'dark', accentColor: '#6366f1' }
+        };
+
+        await supabaseClient.from('profiles').upsert([profile]);
+        currentUser = profile;
+        sessionStorage.setItem('ch_user', JSON.stringify(currentUser));
+        initApp();
       } else {
         const { data, error } = await supabaseClient.auth.signInWithPassword({
           email: email,
@@ -395,9 +406,6 @@
         });
 
         if (error) {
-          if (error.message.includes("Email not confirmed")) {
-            return alert("⚠️ Please confirm your email before signing in. Check your inbox/spam folder.");
-          }
           return alert("Login error: " + error.message);
         }
 
@@ -442,7 +450,6 @@
       }
 
       try {
-        // Run database function to erase profile and auth records
         const { error: rpcErr } = await supabaseClient.rpc('delete_user_account');
         if (rpcErr) {
           await supabaseClient.from('profiles').delete().eq('id', currentUser.id);
@@ -477,6 +484,14 @@
       document.querySelectorAll('.nav-icon').forEach((el, idx) => {
         el.classList.toggle('active', tabNames[idx] === tab);
       });
+
+      document.getElementById('sidebar-title').textContent = 
+        tab === 'public' ? 'Public Chat' :
+        tab === 'discussions' ? 'Discussions' :
+        tab === 'groups' ? 'Groups' :
+        tab === 'dms' ? 'Direct Messages' :
+        tab === 'friends' ? 'Friends' :
+        tab === 'search' ? 'Search Users' : 'Settings';
 
       document.getElementById('sidebar-action-btn').style.display = (tab === 'discussions' || tab === 'groups') ? 'block' : 'none';
       document.getElementById('sidebar-search-container').style.display = tab === 'search' ? 'block' : 'none';
@@ -525,6 +540,14 @@
           div.className = `list-item ${activeTarget.id === g.id ? 'active' : ''}`;
           div.onclick = () => selectTarget('group', g.id, g.name, `${g.members.length} members`);
           div.innerHTML = `<div class="title">🔒 ${g.name}</div><div class="subtitle">${g.members.length} members</div>`;
+          listContainer.appendChild(div);
+        });
+      } else if (currentTab === 'dms') {
+        allUsers.filter(u => u.id !== currentUser.id).forEach(u => {
+          const div = document.createElement('div');
+          div.className = `list-item ${activeTarget.id === u.id ? 'active' : ''}`;
+          div.innerHTML = `${renderAvatarHTML(u)}<div class="item-info"><div class="title">${getFormattedUserDisplay(u)}</div></div>`;
+          div.onclick = () => selectTarget('dm', u.id, getFormattedUserDisplay(u), u.bio || '');
           listContainer.appendChild(div);
         });
       } else if (currentTab === 'friends') {
@@ -578,17 +601,25 @@
 
     function renderMessages() {
       const container = document.getElementById('messages-container');
+      if (!container) return;
       container.innerHTML = '';
 
       const filtered = messages.filter(m => {
-        if (activeTarget.type === 'public') return m.target_type === 'public';
-        if (activeTarget.type === 'dm') return m.target_type === 'dm' && ((m.sender_id === currentUser.id && m.target_id === activeTarget.id) || (m.sender_id === activeTarget.id && m.target_id === currentUser.id));
+        if (activeTarget.type === 'public') {
+          return m.target_type === 'public';
+        }
+        if (activeTarget.type === 'dm') {
+          return m.target_type === 'dm' && (
+            (m.sender_id === currentUser.id && m.target_id === activeTarget.id) ||
+            (m.sender_id === activeTarget.id && m.target_id === currentUser.id)
+          );
+        }
         return m.target_type === activeTarget.type && m.target_id === activeTarget.id;
       });
 
       filtered.forEach(m => {
         const isSent = m.sender_id === currentUser.id;
-        const senderUser = allUsers.find(u => u.id === m.sender_id) || { username: m.sender_name };
+        const senderUser = allUsers.find(u => u.id === m.sender_id) || { username: m.sender_name || 'User' };
         const div = document.createElement('div');
         div.className = `message ${isSent ? 'sent' : 'received'}`;
         div.innerHTML = `${renderAvatarHTML(senderUser)}<div class="message-content"><div class="message-meta"><span>${isSent ? 'You' : getFormattedUserDisplay(senderUser)}</span></div><div class="message-bubble">${m.text}</div></div>`;
@@ -601,7 +632,7 @@
       e.preventDefault();
       const input = document.getElementById('message-input');
       const text = input.value.trim();
-      if (!text || !supabaseClient) return;
+      if (!text || !supabaseClient || !currentUser) return;
 
       const newMsg = {
         id: 'msg_' + Date.now(),
@@ -609,15 +640,33 @@
         sender_name: currentUser.username,
         target_type: activeTarget.type,
         target_id: activeTarget.id,
-        text
+        text: text,
+        created_at: new Date().toISOString()
       };
 
-      await supabaseClient.from('messages').insert([newMsg]);
       input.value = '';
+
+      // Immediately append & render locally
+      messages.push(newMsg);
+      renderMessages();
+
+      // Send to Supabase DB
+      const { error } = await supabaseClient.from('messages').insert([{
+        id: newMsg.id,
+        sender_id: newMsg.sender_id,
+        sender_name: newMsg.sender_name,
+        target_type: newMsg.target_type,
+        target_id: newMsg.target_id,
+        text: newMsg.text
+      }]);
+
+      if (error) {
+        console.error("Message DB sync error:", error);
+      }
     }
 
     function populateSettingsForm() {
-      document.getElementById('settings-username').value = currentUser.username;
+      document.getElementById('settings-username').value = currentUser.username || '';
       document.getElementById('settings-bio').value = currentUser.bio || '';
       const s = currentUser.settings || {};
       document.getElementById('settings-display-mode').value = s.displayMode || 'username';
@@ -641,7 +690,18 @@
         accentColor: document.getElementById('settings-accent-color').value
       };
 
-      await supabaseClient.from('profiles').update({ username: currentUser.username, bio: currentUser.bio, settings: currentUser.settings, pfp: tempUploadedPFP !== null ? tempUploadedPFP : currentUser.pfp }).eq('id', currentUser.id);
+      if (tempUploadedPFP !== null) {
+        currentUser.pfp = tempUploadedPFP;
+      }
+
+      await supabaseClient.from('profiles').update({ 
+        username: currentUser.username, 
+        bio: currentUser.bio, 
+        settings: currentUser.settings, 
+        pfp: currentUser.pfp 
+      }).eq('id', currentUser.id);
+
+      sessionStorage.setItem('ch_user', JSON.stringify(currentUser));
       applyUserSettings();
       alert('Settings saved!');
     }
@@ -661,6 +721,7 @@
 
     function removePFP() { 
       tempUploadedPFP = ''; 
+      currentUser.pfp = '';
       document.getElementById('settings-pfp-preview').style.display = 'none';
       document.getElementById('settings-pfp-placeholder').style.display = 'flex';
     }
@@ -695,6 +756,8 @@
         await supabaseClient.from('groups').insert([{ id: 'grp_' + Date.now(), name, members }]);
       }
       closeModal();
+      await fetchAllData();
+      renderCurrentView();
     }
   </script>
 </body>
