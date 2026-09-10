@@ -111,8 +111,10 @@
     #settings-view { flex: 1; padding: 30px; overflow-y: auto; display: none; max-width: 700px; margin: 0 auto; width: 100%; }
     .settings-section { background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 10px; padding: 20px; margin-bottom: 24px; }
     .settings-section h4 { margin-bottom: 16px; font-size: 1.1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 8px; }
-    .pfp-picker { display: flex; align-items: center; gap: 20px; margin-bottom: 16px; }
+    .pfp-picker { display: flex; align-items: flex-start; gap: 20px; margin-bottom: 16px; }
     .pfp-picker img { width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 2px solid var(--accent); }
+    .pfp-actions { display: flex; flex-direction: column; gap: 8px; }
+    .pfp-actions-row { display: flex; gap: 8px; flex-wrap: wrap; }
     .bio-counter { font-size: 0.75rem; color: var(--text-muted); text-align: right; margin-top: 4px; }
 
     .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: none; justify-content: center; align-items: center; z-index: 200; }
@@ -155,7 +157,7 @@
       <div class="nav-icon" onclick="switchTab('friends')" title="Friends List">🤝</div>
       <div class="nav-icon" onclick="switchTab('search')" title="Find Users">🔍</div>
       <div class="nav-icon" onclick="switchTab('settings')" title="Account & Settings">⚙️</div>
-      <div class="nav-icon user-profile-btn" id="nav-user-pfp" onclick="logout()" title="Logout">
+      <div class="nav-icon user-profile-btn" id="nav-user-pfp" onclick="switchTab('settings')" title="Settings">
         <span id="nav-user-initial">U</span>
       </div>
     </div>
@@ -193,12 +195,18 @@
           <div class="pfp-picker">
             <img id="settings-pfp-preview" src="" alt="Profile Preview" style="display:none;">
             <div id="settings-pfp-placeholder" class="avatar" style="width: 80px; height: 80px; font-size: 2rem;">?</div>
-            <div>
-              <label class="btn btn-secondary" style="display: inline-block; width: auto; cursor: pointer; padding: 6px 12px; font-size: 0.85rem;">
-                Upload Picture
-                <input type="file" id="pfp-file-input" accept="image/*" style="display:none;" onchange="handlePFPUpload(event)">
-              </label>
-              <button type="button" class="btn btn-danger" style="width: auto; padding: 6px 12px; font-size: 0.85rem; margin-left: 8px;" onclick="removePFP()">Remove</button>
+            <div class="pfp-actions">
+              <div class="pfp-actions-row">
+                <label class="btn btn-secondary" style="display: inline-block; width: auto; cursor: pointer; padding: 6px 12px; font-size: 0.85rem;">
+                  Upload Picture
+                  <input type="file" id="pfp-file-input" accept="image/*" style="display:none;" onchange="handlePFPUpload(event)">
+                </label>
+                <button type="button" class="btn btn-secondary" style="width: auto; padding: 6px 12px; font-size: 0.85rem;" onclick="removePFP()">Remove</button>
+              </div>
+              <div class="pfp-actions-row">
+                <button type="button" class="btn btn-secondary" style="width: auto; padding: 6px 12px; font-size: 0.85rem;" onclick="openChangePasswordModal()">Change Password</button>
+                <button type="button" class="btn btn-danger" style="width: auto; padding: 6px 12px; font-size: 0.85rem;" onclick="logout()">Log Out</button>
+              </div>
             </div>
           </div>
           <div class="input-group">
@@ -275,6 +283,24 @@
       <div style="display: flex; gap: 8px; margin-top: 12px;">
         <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
         <button type="button" class="btn" onclick="submitModal()">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="password-modal">
+    <div class="modal-card">
+      <h3>Change Password</h3>
+      <div class="input-group">
+        <label for="new-password-input">New Password</label>
+        <input type="password" id="new-password-input" placeholder="Enter new password" required>
+      </div>
+      <div class="input-group">
+        <label for="confirm-password-input">Confirm New Password</label>
+        <input type="password" id="confirm-password-input" placeholder="Confirm new password" required>
+      </div>
+      <div style="display: flex; gap: 8px; margin-top: 12px;">
+        <button type="button" class="btn btn-secondary" onclick="closePasswordModal()">Cancel</button>
+        <button type="button" class="btn" onclick="submitPasswordChange()">Update Password</button>
       </div>
     </div>
   </div>
@@ -438,6 +464,33 @@
       if (supabaseClient) await supabaseClient.auth.signOut();
       sessionStorage.removeItem('ch_user');
       location.reload();
+    }
+
+    function openChangePasswordModal() {
+      document.getElementById('new-password-input').value = '';
+      document.getElementById('confirm-password-input').value = '';
+      document.getElementById('password-modal').style.display = 'flex';
+    }
+
+    function closePasswordModal() {
+      document.getElementById('password-modal').style.display = 'none';
+    }
+
+    async function submitPasswordChange() {
+      const newPassword = document.getElementById('new-password-input').value.trim();
+      const confirmPassword = document.getElementById('confirm-password-input').value.trim();
+
+      if (!newPassword) return alert("Please enter a new password.");
+      if (newPassword.length < 6) return alert("Password must be at least 6 characters long.");
+      if (newPassword !== confirmPassword) return alert("Passwords do not match.");
+
+      const { error } = await supabaseClient.auth.updateUser({ password: newPassword });
+      if (error) {
+        alert("Password change error: " + error.message);
+      } else {
+        alert("Password updated successfully!");
+        closePasswordModal();
+      }
     }
 
     async function deleteAccount() {
@@ -646,11 +699,9 @@
 
       input.value = '';
 
-      // Immediately append & render locally
       messages.push(newMsg);
       renderMessages();
 
-      // Send to Supabase DB
       const { error } = await supabaseClient.from('messages').insert([{
         id: newMsg.id,
         sender_id: newMsg.sender_id,
