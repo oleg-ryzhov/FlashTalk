@@ -156,8 +156,7 @@
       <div class="nav-icon" onclick="switchTab('dms')" title="Direct Messages">✉️</div>
       <div class="nav-icon" onclick="switchTab('friends')" title="Friends List">🤝</div>
       <div class="nav-icon" onclick="switchTab('search')" title="Find Users">🔍</div>
-      <div class="nav-icon" onclick="switchTab('settings')" title="Account & Settings">⚙️</div>
-      <div class="nav-icon user-profile-btn" id="nav-user-pfp" onclick="switchTab('settings')" title="Settings">
+      <div class="nav-icon user-profile-btn" id="nav-user-pfp" onclick="switchTab('settings')" title="Account & Settings">
         <span id="nav-user-initial">U</span>
       </div>
     </div>
@@ -218,6 +217,14 @@
             <textarea id="settings-bio" rows="2" maxlength="100" oninput="updateBioCount()"></textarea>
             <div class="bio-counter" id="bio-char-count">0 / 100</div>
           </div>
+        </div>
+
+        <div class="settings-section">
+          <h4>Invite Friends</h4>
+          <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
+            Send an email invite to a friend so they can join you on FlashTalk.
+          </p>
+          <button type="button" class="btn btn-secondary" style="width: auto; padding: 8px 16px; font-size: 0.85rem;" onclick="openInviteModal()">✉️ Invite Friend via Email</button>
         </div>
 
         <div class="settings-section">
@@ -301,6 +308,23 @@
       <div style="display: flex; gap: 8px; margin-top: 12px;">
         <button type="button" class="btn btn-secondary" onclick="closePasswordModal()">Cancel</button>
         <button type="button" class="btn" onclick="submitPasswordChange()">Update Password</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="invite-modal">
+    <div class="modal-card">
+      <h3>Invite a Friend</h3>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
+        Send an email invitation link to your friend so they can join FlashTalk.
+      </p>
+      <div class="input-group">
+        <label for="invite-email-input">Friend's Email Address</label>
+        <input type="email" id="invite-email-input" placeholder="friend@example.com" required>
+      </div>
+      <div style="display: flex; gap: 8px; margin-top: 12px;">
+        <button type="button" class="btn btn-secondary" onclick="closeInviteModal()">Cancel</button>
+        <button type="button" class="btn" onclick="sendEmailInvite()">Send Invite</button>
       </div>
     </div>
   </div>
@@ -493,6 +517,38 @@
       }
     }
 
+    function openInviteModal() {
+      document.getElementById('invite-email-input').value = '';
+      document.getElementById('invite-modal').style.display = 'flex';
+    }
+
+    function closeInviteModal() {
+      document.getElementById('invite-modal').style.display = 'none';
+    }
+
+    async function sendEmailInvite() {
+      const email = document.getElementById('invite-email-input').value.trim().toLowerCase();
+      if (!email) return alert("Please enter an email address.");
+
+      try {
+        const { error } = await supabaseClient.auth.signInWithOtp({
+          email: email,
+          options: {
+            emailRedirectTo: window.location.href
+          }
+        });
+
+        if (error) {
+          alert("Failed to send invitation: " + error.message);
+        } else {
+          alert(`Invitation email successfully sent to ${email}!`);
+          closeInviteModal();
+        }
+      } catch (err) {
+        alert("Error sending invite: " + err.message);
+      }
+    }
+
     async function deleteAccount() {
       const confirmFirst = confirm("⚠️ Are you sure you want to PERMANENTLY delete your FlashTalk account?\n\nThis will erase your account, messages, and profile settings forever.");
       if (!confirmFirst) return;
@@ -546,7 +602,7 @@
         tab === 'friends' ? 'Friends' :
         tab === 'search' ? 'Search Users' : 'Settings';
 
-      document.getElementById('sidebar-action-btn').style.display = (tab === 'discussions' || tab === 'groups') ? 'block' : 'none';
+      document.getElementById('sidebar-action-btn').style.display = (tab === 'discussions' || tab === 'groups' || tab === 'friends' || tab === 'search') ? 'block' : 'none';
       document.getElementById('sidebar-search-container').style.display = tab === 'search' ? 'block' : 'none';
       document.getElementById('main-chat').style.display = tab === 'settings' ? 'none' : 'flex';
       document.getElementById('settings-view').style.display = tab === 'settings' ? 'block' : 'none';
@@ -604,6 +660,8 @@
           listContainer.appendChild(div);
         });
       } else if (currentTab === 'friends') {
+        document.getElementById('sidebar-action-btn').textContent = '+ Invite';
+        document.getElementById('sidebar-action-btn').onclick = () => openInviteModal();
         (currentUser.friends || []).forEach(fid => {
           const u = allUsers.find(x => x.id === fid);
           if (!u) return;
@@ -614,6 +672,8 @@
           listContainer.appendChild(div);
         });
       } else if (currentTab === 'search') {
+        document.getElementById('sidebar-action-btn').textContent = '+ Invite';
+        document.getElementById('sidebar-action-btn').onclick = () => openInviteModal();
         handleSearch(document.getElementById('sidebar-search-input').value);
       }
     }
