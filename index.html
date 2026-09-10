@@ -321,16 +321,28 @@
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInRefiI6InNzYmdrYndudXF4eXl3Z2N2dnFzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkwNTUyODcsImV4cCI6MjEwNDYzMTI4N30.y6stuaVrkaIBWxnqySPXFOgNdn64s2C1nVcWkaTbRQk";
 
     let supabaseClient = null;
-    let currentUser = JSON.parse(sessionStorage.getItem('ch_user') || 'null');
+    let currentUser = null;
     let isRegister = false;
     let currentTab = 'public';
     let activeTarget = { type: 'public', id: 'global' };
     let tempUploadedPFP = null;
 
-    let allUsers = [];
+    let userCache = {};
     let discussions = [];
     let groups = [];
     let messages = [];
+    let realtimeChannel = null;
+
+    // --- SECURITY: XSS Sanitization Helper ---
+    function escapeHTML(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
 
     document.addEventListener('DOMContentLoaded', async () => {
       try {
@@ -342,6 +354,7 @@
         }
       } catch (err) {
         console.error("Supabase initialization failed:", err);
+        return;
       }
 
       const authForm = document.getElementById('auth-form');
@@ -350,47 +363,87 @@
       if (authForm) authForm.addEventListener('submit', handleAuth);
       if (authToggleBtn) authToggleBtn.addEventListener('click', toggleAuthMode);
 
-      if (currentUser) {
-        initApp();
-      }
+      // Robust Auth Session Listener
+      supabaseClient.auth.onAuthStateChange(async (event, session) => {
+        if (session && session.user) {
+          await fetchCurrentProfile(session.user);
+          initApp();
+        } else {
+          currentUser = null;
+          document.getElementById('auth-screen').style.display = 'flex';
+          document.getElementById('app').style.display = 'none';
+        }
+      });
     });
+
+    async function fetchCurrentProfile(authUser) {
+      let { data: profile } = await supabaseClient
+        .from('profiles')
+        .select('*')
+        .eq('id', authUser.id)
+        .maybeSingle();
+
+      if (!profile) {
+        profile = {
+          id: authUser.id,
+          email: authUser.email,
+          username: authUser.user_metadata?.username || authUser.email.split('@')[0],
+          pfp: '',
+          bio: '',
+          friends: [],
+          settings: { displayMode: 'username', fontSize: 'medium', theme: 'dark', accentColor: '#6366f1' }
+        };
+        await supabaseClient.from('profiles').upsert([profile]);
+      }
+
+      currentUser = profile;
+      userCache[currentUser.id] = currentUser;
+    }
 
     async function initApp() {
       if (!currentUser) return;
       document.getElementById('auth-screen').style.display = 'none';
       document.getElementById('app').style.display = 'flex';
 
-      await fetchAllData();
-      subscribeRealtime();
       applyUserSettings();
+      subscribeRealtime();
       switchTab('public');
     }
 
-    async function fetchAllData() {
-      if (!supabaseClient) return;
-      const { data: u } = await supabaseClient.from('profiles').select('*');
-      allUsers = u || [];
-      const updatedSelf = allUsers.find(x => x.id === currentUser.id);
-      if (updatedSelf) currentUser = updatedSelf;
-
-      const { data: d } = await supabaseClient.from('discussions').select('*');
-      discussions = d || [];
-
-      const { data: g } = await supabaseClient.from('groups').select('*');
-      groups = g || [];
-
-      const { data: m } = await supabaseClient.from('messages').select('*').order('created_at', { ascending: true });
-      messages = m || [];
-    }
-
     function subscribeRealtime() {
-      if (!supabaseClient) return;
-      supabaseClient.channel('public-db-changes')
-        .on('postgres_changes', { event: '*', schema: 'public' }, async () => {
-          await fetchAllData();
-          renderCurrentView();
+      if (!supabaseClient || realtimeChannel) return;
+
+      // Realtime listener for message INSERTS only (Low Bandwidth)
+      realtimeChannel = supabaseClient.channel('realtime-messages')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, async (payload) => {
+          const newMsg = payload.new;
+          if (isMsgForActiveTarget(newMsg)) {
+            if (!messages.some(m => m.id === newMsg.id)) {
+              messages.push(newMsg);
+              if (!userCache[newMsg.sender_id]) {
+                await fetchUserToCache(newMsg.sender_id);
+              }
+              appendSingleMessage(newMsg);
+            }
+          }
         })
         .subscribe();
+    }
+
+    function isMsgForActiveTarget(m) {
+      if (activeTarget.type === 'public' && m.target_type === 'public') return true;
+      if (activeTarget.type === 'dm' && m.target_type === 'dm') {
+        return (m.sender_id === currentUser.id && m.target_id === activeTarget.id) ||
+               (m.sender_id === activeTarget.id && m.target_id === currentUser.id);
+      }
+      return m.target_type === activeTarget.type && m.target_id === activeTarget.id;
+    }
+
+    async function fetchUserToCache(userId) {
+      if (userCache[userId]) return userCache[userId];
+      const { data } = await supabaseClient.from('profiles').select('*').eq('id', userId).single();
+      if (data) userCache[data.id] = data;
+      return data;
     }
 
     function toggleAuthMode() {
@@ -415,65 +468,23 @@
         const { data, error } = await supabaseClient.auth.signUp({
           email: email,
           password: password,
-          options: {
-            data: { username: username }
-          }
+          options: { data: { username: username } }
         });
 
         if (error) return alert("Registration Error: " + error.message);
-
-        let profile = {
-          id: data.user.id,
-          email: email,
-          username: username,
-          pfp: '',
-          bio: '',
-          friends: [],
-          settings: { displayMode: 'username', fontSize: 'medium', theme: 'dark', accentColor: '#6366f1' }
-        };
-
-        await supabaseClient.from('profiles').upsert([profile]);
-        currentUser = profile;
-        sessionStorage.setItem('ch_user', JSON.stringify(currentUser));
-        initApp();
+        alert("Registration complete! Logging in...");
       } else {
-        const { data, error } = await supabaseClient.auth.signInWithPassword({
+        const { error } = await supabaseClient.auth.signInWithPassword({
           email: email,
           password: password
         });
 
-        if (error) {
-          return alert("Login error: " + error.message);
-        }
-
-        let { data: profile } = await supabaseClient
-          .from('profiles')
-          .select('*')
-          .eq('id', data.user.id)
-          .maybeSingle();
-
-        if (!profile) {
-          profile = {
-            id: data.user.id,
-            email: data.user.email,
-            username: data.user.user_metadata?.username || email.split('@')[0],
-            pfp: '',
-            bio: '',
-            friends: [],
-            settings: { displayMode: 'username', fontSize: 'medium', theme: 'dark', accentColor: '#6366f1' }
-          };
-          await supabaseClient.from('profiles').upsert([profile]);
-        }
-
-        currentUser = profile;
-        sessionStorage.setItem('ch_user', JSON.stringify(currentUser));
-        initApp();
+        if (error) return alert("Login error: " + error.message);
       }
     }
 
     async function logout() {
       if (supabaseClient) await supabaseClient.auth.signOut();
-      sessionStorage.removeItem('ch_user');
       location.reload();
     }
 
@@ -541,7 +552,7 @@
     }
 
     async function deleteAccount() {
-      const confirmFirst = confirm("⚠️ Are you sure you want to PERMANENTLY delete your FlashTalk account?\n\nThis will erase your account, messages, and profile settings forever.");
+      const confirmFirst = confirm("⚠️ PERMANENT ACCOUNT DELETION\n\nAre you sure you want to delete your FlashTalk account?");
       if (!confirmFirst) return;
 
       const confirmText = prompt("To confirm deletion, please type 'DELETE' below:");
@@ -550,14 +561,9 @@
       }
 
       try {
-        const { error: rpcErr } = await supabaseClient.rpc('delete_user_account');
-        if (rpcErr) {
-          await supabaseClient.from('profiles').delete().eq('id', currentUser.id);
-        }
-
+        await supabaseClient.from('profiles').delete().eq('id', currentUser.id);
         if (supabaseClient) await supabaseClient.auth.signOut();
-        sessionStorage.removeItem('ch_user');
-        alert("Your account has been permanently deleted.");
+        alert("Your account has been deleted.");
         location.reload();
       } catch (err) {
         alert("An error occurred while deleting your account: " + err.message);
@@ -572,13 +578,13 @@
 
       const pfpNav = document.getElementById('nav-user-pfp');
       if (currentUser.pfp) {
-        pfpNav.innerHTML = `<img src="${currentUser.pfp}">`;
+        pfpNav.innerHTML = `<img src="${escapeHTML(currentUser.pfp)}">`;
       } else {
-        pfpNav.innerHTML = `<span>${(currentUser.username || 'U').charAt(0).toUpperCase()}</span>`;
+        pfpNav.innerHTML = `<span>${escapeHTML((currentUser.username || 'U').charAt(0).toUpperCase())}</span>`;
       }
     }
 
-    function switchTab(tab) {
+    async function switchTab(tab) {
       currentTab = tab;
       const tabNames = ['public', 'discussions', 'groups', 'dms', 'friends', 'search', 'settings'];
       document.querySelectorAll('.nav-icon').forEach((el, idx) => {
@@ -600,12 +606,72 @@
 
       if (tab === 'public') selectTarget('public', 'global', 'General Public Chat', 'Everyone can talk here');
       if (tab === 'settings') populateSettingsForm();
-      renderCurrentView();
+      
+      await loadTabSidebar();
     }
 
-    function renderCurrentView() {
-      renderSidebarList();
-      if (currentTab !== 'settings') renderMessages();
+    async function loadTabSidebar() {
+      const listContainer = document.getElementById('sidebar-list');
+      listContainer.innerHTML = '';
+
+      if (currentTab === 'public') {
+        listContainer.innerHTML = `<div class="list-item active"><div class="title"># General Chat</div></div>`;
+      } else if (currentTab === 'discussions') {
+        document.getElementById('sidebar-action-btn').textContent = '+ New';
+        document.getElementById('sidebar-action-btn').onclick = () => openCreateModal('discussion');
+        const { data } = await supabaseClient.from('discussions').select('*').order('created_at', { ascending: false }).limit(50);
+        discussions = data || [];
+        discussions.forEach(d => {
+          const div = document.createElement('div');
+          div.className = `list-item ${activeTarget.id === d.id ? 'active' : ''}`;
+          div.onclick = () => selectTarget('discussion', d.id, d.title, `By ${d.author_name}`);
+          div.innerHTML = `<div class="title">📌 ${escapeHTML(d.title)}</div><div class="subtitle">By ${escapeHTML(d.author_name)}</div>`;
+          listContainer.appendChild(div);
+        });
+      } else if (currentTab === 'groups') {
+        document.getElementById('sidebar-action-btn').textContent = '+ Group';
+        document.getElementById('sidebar-action-btn').onclick = () => openCreateModal('group');
+        const { data } = await supabaseClient.from('groups').select('*').contains('members', [currentUser.id]).limit(50);
+        groups = data || [];
+        groups.forEach(g => {
+          const div = document.createElement('div');
+          div.className = `list-item ${activeTarget.id === g.id ? 'active' : ''}`;
+          div.onclick = () => selectTarget('group', g.id, g.name, `${g.members.length} members`);
+          div.innerHTML = `<div class="title">🔒 ${escapeHTML(g.name)}</div><div class="subtitle">${g.members.length} members</div>`;
+          listContainer.appendChild(div);
+        });
+      } else if (currentTab === 'dms') {
+        const { data } = await supabaseClient.from('profiles').select('*').neq('id', currentUser.id).limit(30);
+        (data || []).forEach(u => {
+          userCache[u.id] = u;
+          const div = document.createElement('div');
+          div.className = `list-item ${activeTarget.id === u.id ? 'active' : ''}`;
+          div.innerHTML = `${renderAvatarHTML(u)}<div class="item-info"><div class="title">${escapeHTML(getFormattedUserDisplay(u))}</div></div>`;
+          div.onclick = () => selectTarget('dm', u.id, getFormattedUserDisplay(u), u.bio || '');
+          listContainer.appendChild(div);
+        });
+      } else if (currentTab === 'friends') {
+        document.getElementById('sidebar-action-btn').textContent = '🔗 Share Link';
+        document.getElementById('sidebar-action-btn').onclick = () => copyInviteLink();
+        const friendIds = currentUser.friends || [];
+        if (friendIds.length > 0) {
+          const { data } = await supabaseClient.from('profiles').select('*').in('id', friendIds);
+          (data || []).forEach(u => {
+            userCache[u.id] = u;
+            const div = document.createElement('div');
+            div.className = 'list-item';
+            div.innerHTML = `${renderAvatarHTML(u)}<div class="item-info"><div class="title">${escapeHTML(getFormattedUserDisplay(u))}</div></div>`;
+            div.onclick = () => { selectTarget('dm', u.id, getFormattedUserDisplay(u), u.bio || ''); switchTab('dms'); };
+            listContainer.appendChild(div);
+          });
+        } else {
+          listContainer.innerHTML = `<div style="padding:12px; color:var(--text-muted); font-size:0.85rem;">No friends added yet.</div>`;
+        }
+      } else if (currentTab === 'search') {
+        document.getElementById('sidebar-action-btn').textContent = '🔗 Share Link';
+        document.getElementById('sidebar-action-btn').onclick = () => copyInviteLink();
+        handleSearch(document.getElementById('sidebar-search-input').value);
+      }
     }
 
     function getFormattedUserDisplay(user) {
@@ -616,73 +682,39 @@
       return `@${user.username}`;
     }
 
-    function renderSidebarList() {
-      const listContainer = document.getElementById('sidebar-list');
-      listContainer.innerHTML = '';
-
-      if (currentTab === 'public') {
-        listContainer.innerHTML = `<div class="list-item active"><div class="title"># General Chat</div></div>`;
-      } else if (currentTab === 'discussions') {
-        document.getElementById('sidebar-action-btn').textContent = '+ New';
-        document.getElementById('sidebar-action-btn').onclick = () => openCreateModal('discussion');
-        discussions.forEach(d => {
-          const div = document.createElement('div');
-          div.className = `list-item ${activeTarget.id === d.id ? 'active' : ''}`;
-          div.onclick = () => selectTarget('discussion', d.id, d.title, `By ${d.author_name}`);
-          div.innerHTML = `<div class="title">📌 ${d.title}</div><div class="subtitle">By ${d.author_name}</div>`;
-          listContainer.appendChild(div);
-        });
-      } else if (currentTab === 'groups') {
-        document.getElementById('sidebar-action-btn').textContent = '+ Group';
-        document.getElementById('sidebar-action-btn').onclick = () => openCreateModal('group');
-        groups.filter(g => g.members && g.members.includes(currentUser.id)).forEach(g => {
-          const div = document.createElement('div');
-          div.className = `list-item ${activeTarget.id === g.id ? 'active' : ''}`;
-          div.onclick = () => selectTarget('group', g.id, g.name, `${g.members.length} members`);
-          div.innerHTML = `<div class="title">🔒 ${g.name}</div><div class="subtitle">${g.members.length} members</div>`;
-          listContainer.appendChild(div);
-        });
-      } else if (currentTab === 'dms') {
-        allUsers.filter(u => u.id !== currentUser.id).forEach(u => {
-          const div = document.createElement('div');
-          div.className = `list-item ${activeTarget.id === u.id ? 'active' : ''}`;
-          div.innerHTML = `${renderAvatarHTML(u)}<div class="item-info"><div class="title">${getFormattedUserDisplay(u)}</div></div>`;
-          div.onclick = () => selectTarget('dm', u.id, getFormattedUserDisplay(u), u.bio || '');
-          listContainer.appendChild(div);
-        });
-      } else if (currentTab === 'friends') {
-        document.getElementById('sidebar-action-btn').textContent = '🔗 Share Link';
-        document.getElementById('sidebar-action-btn').onclick = () => copyInviteLink();
-        (currentUser.friends || []).forEach(fid => {
-          const u = allUsers.find(x => x.id === fid);
-          if (!u) return;
-          const div = document.createElement('div');
-          div.className = 'list-item';
-          div.innerHTML = `${renderAvatarHTML(u)}<div class="item-info"><div class="title">${getFormattedUserDisplay(u)}</div></div>`;
-          div.onclick = () => { selectTarget('dm', u.id, getFormattedUserDisplay(u), u.bio || ''); switchTab('dms'); };
-          listContainer.appendChild(div);
-        });
-      } else if (currentTab === 'search') {
-        document.getElementById('sidebar-action-btn').textContent = '🔗 Share Link';
-        document.getElementById('sidebar-action-btn').onclick = () => copyInviteLink();
-        handleSearch(document.getElementById('sidebar-search-input').value);
-      }
-    }
-
     function renderAvatarHTML(user) {
-      if (user.pfp) return `<img class="avatar" src="${user.pfp}">`;
-      return `<div class="avatar">${user.username ? user.username.charAt(0).toUpperCase() : '?'}</div>`;
+      if (user.pfp) return `<img class="avatar" src="${escapeHTML(user.pfp)}">`;
+      return `<div class="avatar">${escapeHTML(user.username ? user.username.charAt(0).toUpperCase() : '?')}</div>`;
     }
 
-    function handleSearch(query) {
+    async function handleSearch(query) {
       const listContainer = document.getElementById('sidebar-list');
       listContainer.innerHTML = '';
       const q = query.toLowerCase().trim();
-      allUsers.filter(u => u.id !== currentUser.id && (u.username.toLowerCase().includes(q) || u.email.toLowerCase().includes(q))).forEach(u => {
+
+      if (!q) {
+        listContainer.innerHTML = `<div style="padding:12px; color:var(--text-muted); font-size:0.85rem;">Type to search users...</div>`;
+        return;
+      }
+
+      const { data: users } = await supabaseClient
+        .from('profiles')
+        .select('*')
+        .neq('id', currentUser.id)
+        .or(`username.ilike.%${q}%,email.ilike.%${q}%`)
+        .limit(20);
+
+      if (!users || users.length === 0) {
+        listContainer.innerHTML = `<div style="padding:12px; color:var(--text-muted); font-size:0.85rem;">No users found</div>`;
+        return;
+      }
+
+      users.forEach(u => {
+        userCache[u.id] = u;
         const isFriend = (currentUser.friends || []).includes(u.id);
         const div = document.createElement('div');
         div.className = 'list-item';
-        div.innerHTML = `${renderAvatarHTML(u)}<div class="item-info"><div class="title">${getFormattedUserDisplay(u)}</div></div>
+        div.innerHTML = `${renderAvatarHTML(u)}<div class="item-info"><div class="title">${escapeHTML(getFormattedUserDisplay(u))}</div></div>
           <button class="btn ${isFriend ? 'btn-secondary' : ''}" style="width:auto;padding:4px 8px;font-size:0.75rem;" onclick="event.stopPropagation(); toggleFriend('${u.id}')">${isFriend ? 'Unfriend' : '+ Friend'}</button>`;
         listContainer.appendChild(div);
       });
@@ -693,42 +725,66 @@
       friends = friends.includes(userId) ? friends.filter(id => id !== userId) : [...friends, userId];
       currentUser.friends = friends;
       await supabaseClient.from('profiles').update({ friends }).eq('id', currentUser.id);
-      renderCurrentView();
+      loadTabSidebar();
     }
 
-    function selectTarget(type, id, title, subtitle) {
+    async function selectTarget(type, id, title, subtitle) {
       activeTarget = { type, id };
       document.getElementById('target-title').textContent = title;
       document.getElementById('target-subtitle').textContent = subtitle;
-      renderCurrentView();
+      await fetchActiveMessages();
+    }
+
+    async function fetchActiveMessages() {
+      let query = supabaseClient.from('messages').select('*');
+
+      if (activeTarget.type === 'public') {
+        query = query.eq('target_type', 'public');
+      } else if (activeTarget.type === 'dm') {
+        query = query.eq('target_type', 'dm')
+          .or(`and(sender_id.eq.${currentUser.id},target_id.eq.${activeTarget.id}),and(sender_id.eq.${activeTarget.id},target_id.eq.${currentUser.id})`);
+      } else {
+        query = query.eq('target_type', activeTarget.type).eq('target_id', activeTarget.id);
+      }
+
+      const { data } = await query.order('created_at', { ascending: false }).limit(50);
+      messages = (data || []).reverse();
+
+      // Ensure sender profiles are cached
+      const senderIds = [...new Set(messages.map(m => m.sender_id))];
+      const uncached = senderIds.filter(id => !userCache[id]);
+      if (uncached.length > 0) {
+        const { data: profiles } = await supabaseClient.from('profiles').select('*').in('id', uncached);
+        (profiles || []).forEach(p => userCache[p.id] = p);
+      }
+
+      renderMessages();
     }
 
     function renderMessages() {
       const container = document.getElementById('messages-container');
       if (!container) return;
       container.innerHTML = '';
+      messages.forEach(m => appendSingleMessage(m));
+      container.scrollTop = container.scrollHeight;
+    }
 
-      const filtered = messages.filter(m => {
-        if (activeTarget.type === 'public') {
-          return m.target_type === 'public';
-        }
-        if (activeTarget.type === 'dm') {
-          return m.target_type === 'dm' && (
-            (m.sender_id === currentUser.id && m.target_id === activeTarget.id) ||
-            (m.sender_id === activeTarget.id && m.target_id === currentUser.id)
-          );
-        }
-        return m.target_type === activeTarget.type && m.target_id === activeTarget.id;
-      });
+    function appendSingleMessage(m) {
+      const container = document.getElementById('messages-container');
+      if (!container) return;
 
-      filtered.forEach(m => {
-        const isSent = m.sender_id === currentUser.id;
-        const senderUser = allUsers.find(u => u.id === m.sender_id) || { username: m.sender_name || 'User' };
-        const div = document.createElement('div');
-        div.className = `message ${isSent ? 'sent' : 'received'}`;
-        div.innerHTML = `${renderAvatarHTML(senderUser)}<div class="message-content"><div class="message-meta"><span>${isSent ? 'You' : getFormattedUserDisplay(senderUser)}</span></div><div class="message-bubble">${m.text}</div></div>`;
-        container.appendChild(div);
-      });
+      const isSent = m.sender_id === currentUser.id;
+      const senderUser = userCache[m.sender_id] || { username: m.sender_name || 'User' };
+      const div = document.createElement('div');
+      div.className = `message ${isSent ? 'sent' : 'received'}`;
+      
+      div.innerHTML = `${renderAvatarHTML(senderUser)}
+        <div class="message-content">
+          <div class="message-meta"><span>${isSent ? 'You' : escapeHTML(getFormattedUserDisplay(senderUser))}</span></div>
+          <div class="message-bubble">${escapeHTML(m.text)}</div>
+        </div>`;
+      
+      container.appendChild(div);
       container.scrollTop = container.scrollHeight;
     }
 
@@ -738,32 +794,21 @@
       const text = input.value.trim();
       if (!text || !supabaseClient || !currentUser) return;
 
-      const newMsg = {
-        id: 'msg_' + Date.now(),
+      input.value = '';
+
+      const { data, error } = await supabaseClient.from('messages').insert([{
         sender_id: currentUser.id,
         sender_name: currentUser.username,
         target_type: activeTarget.type,
         target_id: activeTarget.id,
-        text: text,
-        created_at: new Date().toISOString()
-      };
-
-      input.value = '';
-
-      messages.push(newMsg);
-      renderMessages();
-
-      const { error } = await supabaseClient.from('messages').insert([{
-        id: newMsg.id,
-        sender_id: newMsg.sender_id,
-        sender_name: newMsg.sender_name,
-        target_type: newMsg.target_type,
-        target_id: newMsg.target_id,
-        text: newMsg.text
-      }]);
+        text: text
+      }]).select();
 
       if (error) {
-        console.error("Message DB sync error:", error);
+        alert("Failed to send message: " + error.message);
+      } else if (data && data[0]) {
+        messages.push(data[0]);
+        appendSingleMessage(data[0]);
       }
     }
 
@@ -777,6 +822,12 @@
       document.getElementById('settings-font-size').value = s.fontSize || 'medium';
       document.getElementById('settings-theme').value = s.theme || 'dark';
       document.getElementById('settings-accent-color').value = s.accentColor || '#6366f1';
+
+      if (currentUser.pfp) {
+        document.getElementById('settings-pfp-preview').src = currentUser.pfp;
+        document.getElementById('settings-pfp-preview').style.display = 'block';
+        document.getElementById('settings-pfp-placeholder').style.display = 'none';
+      }
     }
 
     function updateBioCount() {
@@ -805,22 +856,69 @@
         pfp: currentUser.pfp 
       }).eq('id', currentUser.id);
 
-      sessionStorage.setItem('ch_user', JSON.stringify(currentUser));
+      userCache[currentUser.id] = currentUser;
       applyUserSettings();
       alert('Settings saved!');
     }
 
-    function handlePFPUpload(e) {
+    // --- BUCKET STORAGE WITH CANVAS FALLBACK ---
+    async function handlePFPUpload(e) {
       const file = e.target.files[0];
       if (!file) return;
+
+      if (file.size > 2 * 1024 * 1024) {
+        return alert("File size exceeds 2MB limit.");
+      }
+
+      const fileExt = file.name.split('.').pop();
+      const filePath = `${currentUser.id}/${Date.now()}.${fileExt}`;
+
+      // Try Supabase Storage upload
+      const { error: uploadErr } = await supabaseClient.storage
+        .from('avatars')
+        .upload(filePath, file, { upsert: true });
+
+      if (uploadErr) {
+        // Fallback: compress canvas thumbnail locally if storage bucket doesn't exist
+        compressImage(file, (compressedBase64) => {
+          tempUploadedPFP = compressedBase64;
+          showPFPPreview(tempUploadedPFP);
+        });
+      } else {
+        const { data: urlData } = supabaseClient.storage.from('avatars').getPublicUrl(filePath);
+        tempUploadedPFP = urlData.publicUrl;
+        showPFPPreview(tempUploadedPFP);
+      }
+    }
+
+    function compressImage(file, callback) {
       const reader = new FileReader();
-      reader.onload = (evt) => { 
-        tempUploadedPFP = evt.target.result;
-        document.getElementById('settings-pfp-preview').src = tempUploadedPFP;
-        document.getElementById('settings-pfp-preview').style.display = 'block';
-        document.getElementById('settings-pfp-placeholder').style.display = 'none';
+      reader.onload = (evt) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width, height = img.height;
+          const max = 150;
+          if (width > height) {
+            if (width > max) { height *= max / width; width = max; }
+          } else {
+            if (height > max) { width *= max / height; height = max; }
+          }
+          canvas.width = width; canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          callback(canvas.toDataURL('image/jpeg', 0.8));
+        };
+        img.src = evt.target.result;
       };
       reader.readAsDataURL(file);
+    }
+
+    function showPFPPreview(url) {
+      const preview = document.getElementById('settings-pfp-preview');
+      preview.src = url;
+      preview.style.display = 'block';
+      document.getElementById('settings-pfp-placeholder').style.display = 'none';
     }
 
     function removePFP() { 
@@ -831,7 +929,7 @@
     }
 
     let modalType = '';
-    function openCreateModal(type) {
+    async function openCreateModal(type) {
       modalType = type;
       document.getElementById('create-modal').style.display = 'flex';
       document.getElementById('modal-input-name').value = '';
@@ -839,9 +937,11 @@
 
       if (type === 'group') {
         const list = document.getElementById('modal-user-list');
+        list.innerHTML = 'Loading users...';
+        const { data: users } = await supabaseClient.from('profiles').select('*').neq('id', currentUser.id).limit(30);
         list.innerHTML = '';
-        allUsers.filter(u => u.id !== currentUser.id).forEach(u => {
-          list.innerHTML += `<div class="user-select-item"><input type="checkbox" value="${u.id}" class="g-member"> <span>${getFormattedUserDisplay(u)}</span></div>`;
+        (users || []).forEach(u => {
+          list.innerHTML += `<div class="user-select-item"><input type="checkbox" value="${u.id}" class="g-member"> <span>${escapeHTML(getFormattedUserDisplay(u))}</span></div>`;
         });
       }
     }
@@ -853,15 +953,14 @@
       if (!name || !supabaseClient) return;
 
       if (modalType === 'discussion') {
-        await supabaseClient.from('discussions').insert([{ id: 'disc_' + Date.now(), title: name, author_id: currentUser.id, author_name: currentUser.username }]);
+        await supabaseClient.from('discussions').insert([{ title: name, author_id: currentUser.id, author_name: currentUser.username }]);
       } else if (modalType === 'group') {
         const members = Array.from(document.querySelectorAll('.g-member:checked')).map(cb => cb.value);
         members.push(currentUser.id);
-        await supabaseClient.from('groups').insert([{ id: 'grp_' + Date.now(), name, members }]);
+        await supabaseClient.from('groups').insert([{ name, members }]);
       }
       closeModal();
-      await fetchAllData();
-      renderCurrentView();
+      await loadTabSidebar();
     }
   </script>
 </body>
