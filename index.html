@@ -189,6 +189,7 @@
 
       <div id="settings-view">
         <h2 style="margin-bottom: 20px;">Account & Accessibility Settings</h2>
+
         <div class="settings-section">
           <h4>Profile Customization</h4>
           <div class="pfp-picker">
@@ -220,11 +221,14 @@
         </div>
 
         <div class="settings-section">
-          <h4>Invite Friends</h4>
+          <h4>Share FlashTalk</h4>
           <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
-            Send an email invite to a friend so they can join you on FlashTalk.
+            Copy and share the web app link with your friends so they can join you on FlashTalk.
           </p>
-          <button type="button" class="btn btn-secondary" style="width: auto; padding: 8px 16px; font-size: 0.85rem;" onclick="openInviteModal()">✉️ Invite Friend via Email</button>
+          <div style="display: flex; gap: 8px;">
+            <input type="text" id="share-link-input" readonly style="flex: 1; padding: 8px 12px; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-size: 0.85rem;" onclick="this.select()">
+            <button type="button" class="btn btn-secondary" id="settings-copy-btn" style="width: auto; padding: 8px 16px; font-size: 0.85rem; white-space: nowrap;" onclick="copyInviteLink('settings-copy-btn')">🔗 Copy Link</button>
+          </div>
         </div>
 
         <div class="settings-section">
@@ -312,26 +316,9 @@
     </div>
   </div>
 
-  <div class="modal" id="invite-modal">
-    <div class="modal-card">
-      <h3>Invite a Friend</h3>
-      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
-        Send an email invitation link to your friend so they can join FlashTalk.
-      </p>
-      <div class="input-group">
-        <label for="invite-email-input">Friend's Email Address</label>
-        <input type="email" id="invite-email-input" placeholder="friend@example.com" required>
-      </div>
-      <div style="display: flex; gap: 8px; margin-top: 12px;">
-        <button type="button" class="btn btn-secondary" onclick="closeInviteModal()">Cancel</button>
-        <button type="button" class="btn" onclick="sendEmailInvite()">Send Invite</button>
-      </div>
-    </div>
-  </div>
-
   <script>
     const SUPABASE_URL = "https://ssbgkbwnuqxyywgcvvqs.supabase.co";
-    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzYmdrYndudXF4eXl3Z2N2dnFzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkwNTUyODcsImV4cCI6MjEwNDYzMTI4N30.y6stuaVrkaIBWxnqySPXFOgNdn64s2C1nVcWkaTbRQk";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInRefiI6InNzYmdrYndudXF4eXl3Z2N2dnFzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkwNTUyODcsImV4cCI6MjEwNDYzMTI4N30.y6stuaVrkaIBWxnqySPXFOgNdn64s2C1nVcWkaTbRQk";
 
     let supabaseClient = null;
     let currentUser = JSON.parse(sessionStorage.getItem('ch_user') || 'null');
@@ -517,36 +504,40 @@
       }
     }
 
-    function openInviteModal() {
-      document.getElementById('invite-email-input').value = '';
-      document.getElementById('invite-modal').style.display = 'flex';
-    }
-
-    function closeInviteModal() {
-      document.getElementById('invite-modal').style.display = 'none';
-    }
-
-    async function sendEmailInvite() {
-      const email = document.getElementById('invite-email-input').value.trim().toLowerCase();
-      if (!email) return alert("Please enter an email address.");
-
-      try {
-        const { error } = await supabaseClient.auth.signInWithOtp({
-          email: email,
-          options: {
-            emailRedirectTo: window.location.href
-          }
-        });
-
-        if (error) {
-          alert("Failed to send invitation: " + error.message);
+    function copyInviteLink(btnId) {
+      const appUrl = window.location.href;
+      
+      const copyToClipboard = (text) => {
+        if (navigator.clipboard && window.isSecureContext) {
+          return navigator.clipboard.writeText(text);
         } else {
-          alert(`Invitation email successfully sent to ${email}!`);
-          closeInviteModal();
+          const textArea = document.createElement("textarea");
+          textArea.value = text;
+          textArea.style.position = "fixed";
+          textArea.style.left = "-999999px";
+          document.body.appendChild(textArea);
+          textArea.select();
+          return new Promise((resolve, reject) => {
+            document.execCommand('copy') ? resolve() : reject();
+            textArea.remove();
+          });
         }
-      } catch (err) {
-        alert("Error sending invite: " + err.message);
-      }
+      };
+
+      copyToClipboard(appUrl).then(() => {
+        if (btnId) {
+          const btn = document.getElementById(btnId);
+          if (btn) {
+            const origText = btn.textContent;
+            btn.textContent = "Copied! ✓";
+            setTimeout(() => { btn.textContent = origText; }, 2000);
+          }
+        } else {
+          alert("App link copied to clipboard!\n" + appUrl);
+        }
+      }).catch(() => {
+        alert("App link: " + appUrl);
+      });
     }
 
     async function deleteAccount() {
@@ -660,8 +651,8 @@
           listContainer.appendChild(div);
         });
       } else if (currentTab === 'friends') {
-        document.getElementById('sidebar-action-btn').textContent = '+ Invite';
-        document.getElementById('sidebar-action-btn').onclick = () => openInviteModal();
+        document.getElementById('sidebar-action-btn').textContent = '🔗 Share Link';
+        document.getElementById('sidebar-action-btn').onclick = () => copyInviteLink();
         (currentUser.friends || []).forEach(fid => {
           const u = allUsers.find(x => x.id === fid);
           if (!u) return;
@@ -672,8 +663,8 @@
           listContainer.appendChild(div);
         });
       } else if (currentTab === 'search') {
-        document.getElementById('sidebar-action-btn').textContent = '+ Invite';
-        document.getElementById('sidebar-action-btn').onclick = () => openInviteModal();
+        document.getElementById('sidebar-action-btn').textContent = '🔗 Share Link';
+        document.getElementById('sidebar-action-btn').onclick = () => copyInviteLink();
         handleSearch(document.getElementById('sidebar-search-input').value);
       }
     }
@@ -779,6 +770,8 @@
     function populateSettingsForm() {
       document.getElementById('settings-username').value = currentUser.username || '';
       document.getElementById('settings-bio').value = currentUser.bio || '';
+      document.getElementById('share-link-input').value = window.location.href;
+      
       const s = currentUser.settings || {};
       document.getElementById('settings-display-mode').value = s.displayMode || 'username';
       document.getElementById('settings-font-size').value = s.fontSize || 'medium';
