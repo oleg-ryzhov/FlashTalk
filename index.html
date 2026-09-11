@@ -110,8 +110,36 @@
     .op-badge { background: #f59e0b; color: #000; font-weight: bold; font-size: 0.65rem; padding: 1px 4px; border-radius: 4px; text-transform: uppercase; }
 
     #message-input-area { padding: 16px; background: var(--bg-panel); border-top: 1px solid var(--border-color); display: flex; gap: 12px; }
-    #message-input-area input { flex: 1; padding: 12px 16px; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-main); outline: none; }
-    #message-input-area button { width: auto; padding: 0 20px; }
+
+    .suggestion-wrapper { position: relative; flex: 1; display: flex; }
+    .suggestion-wrapper input { flex: 1; padding: 12px 16px; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-main); outline: none; }
+
+    .suggestion-box {
+      position: absolute;
+      bottom: calc(100% + 8px);
+      left: 0;
+      right: 0;
+      background: var(--bg-panel);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      max-height: 180px;
+      overflow-y: auto;
+      z-index: 50;
+      display: none;
+      box-shadow: 0 -4px 16px rgba(0,0,0,0.5);
+    }
+    .suggestion-item {
+      padding: 10px 14px;
+      font-family: monospace;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    .suggestion-item:last-child { border-bottom: none; }
+    .suggestion-item.active { background: var(--accent); color: #ffffff; }
 
     #settings-view { flex: 1; padding: 30px; overflow-y: auto; display: none; max-width: 700px; margin: 0 auto; width: 100%; }
     .settings-section { background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 10px; padding: 20px; margin-bottom: 24px; }
@@ -135,7 +163,7 @@
     .terminal-line { margin-bottom: 4px; white-space: pre-wrap; word-break: break-all; }
     .terminal-line.err { color: #ef4444; }
     .terminal-line.sys { color: #f59e0b; }
-    .terminal-input-container { display: flex; gap: 8px; align-items: center; }
+    .terminal-input-container { display: flex; gap: 8px; align-items: center; position: relative; }
     .terminal-prefix { color: #10b981; font-weight: bold; }
     .terminal-input-container input { flex: 1; background: #000; border: 1px solid #10b981; color: #10b981; font-family: monospace; padding: 8px 10px; border-radius: 4px; outline: none; }
   </style>
@@ -202,8 +230,11 @@
         </div>
         <div id="messages-container"></div>
         <form id="message-input-area" onsubmit="sendMessage(event)">
-          <input type="text" id="message-input" placeholder="Type a message or /command..." required autocomplete="off">
-          <button type="submit" class="btn">Send</button>
+          <div class="suggestion-wrapper">
+            <div id="chat-suggestions" class="suggestion-box"></div>
+            <input type="text" id="message-input" placeholder="Type a message or /command..." required autocomplete="off" oninput="handleInputSuggestions(event)" onkeydown="handleInputKeydown(event)">
+          </div>
+          <button type="submit" class="btn" style="width: auto; padding: 0 20px;">Send</button>
         </form>
       </div>
 
@@ -359,7 +390,10 @@
       </div>
       <div class="terminal-input-container">
         <span class="terminal-prefix">&gt;</span>
-        <input type="text" id="terminal-cmd-input" placeholder="Enter command (e.g., /help, /clear, /op add john)..." onkeydown="handleTerminalKeydown(event)">
+        <div class="suggestion-wrapper">
+          <div id="terminal-suggestions" class="suggestion-box"></div>
+          <input type="text" id="terminal-cmd-input" placeholder="Enter command (e.g., /help, /clear, /user ban)..." oninput="handleInputSuggestions(event)" onkeydown="handleTerminalKeydown(event)">
+        </div>
       </div>
     </div>
   </div>
@@ -371,6 +405,24 @@
     // Operator Mode state (Local mode, default password "admin123")
     let isOpMode = false;
     let opCode = localStorage.getItem('op_code') || "admin123";
+
+    // Alphabetically pre-sorted list of Operator commands
+    const OP_COMMANDS = [
+      '/announce',
+      '/clear',
+      '/enteropmode',
+      '/exitopmode',
+      '/help',
+      '/mute',
+      '/setopcode',
+      '/slowmode',
+      '/unmute',
+      '/user ban',
+      '/user kick'
+    ].sort();
+
+    let currentSuggestions = [];
+    let selectedSuggestionIndex = 0;
 
     let supabaseClient = null;
     let currentUser = null;
@@ -876,8 +928,69 @@
       container.scrollTop = container.scrollHeight;
     }
 
+    /* AUTOCOMPLETE & SUGGESTION SYSTEM */
+    function handleInputSuggestions(e) {
+      const input = e.target;
+      const isTerminal = input.id === 'terminal-cmd-input';
+      const box = document.getElementById(isTerminal ? 'terminal-suggestions' : 'chat-suggestions');
+      const val = input.value;
+
+      // Allow autocomplete if in OP Mode or if typing /enteropmode
+      if (val.startsWith('/') && (isOpMode || '/enteropmode'.startsWith(val.toLowerCase()))) {
+        currentSuggestions = OP_COMMANDS.filter(cmd => cmd.toLowerCase().startsWith(val.toLowerCase()));
+        
+        if (currentSuggestions.length > 0) {
+          selectedSuggestionIndex = 0;
+          renderSuggestions(box, input);
+          return;
+        }
+      }
+
+      hideSuggestions(box);
+    }
+
+    function renderSuggestions(box, input) {
+      if (!box) return;
+      box.innerHTML = '';
+      currentSuggestions.forEach((cmd, idx) => {
+        const item = document.createElement('div');
+        item.className = `suggestion-item ${idx === selectedSuggestionIndex ? 'active' : ''}`;
+        item.innerHTML = `<span>${escapeHTML(cmd)}</span> <span style="opacity:0.5; font-size:0.75rem;">Tab ↹</span>`;
+        item.onmousedown = (e) => {
+          e.preventDefault();
+          input.value = cmd + ' ';
+          hideSuggestions(box);
+          input.focus();
+        };
+        box.appendChild(item);
+      });
+      box.style.display = 'block';
+    }
+
+    function hideSuggestions(box) {
+      if (box) box.style.display = 'none';
+      currentSuggestions = [];
+      selectedSuggestionIndex = 0;
+    }
+
+    function handleInputKeydown(e) {
+      const input = e.target;
+      const box = document.getElementById('chat-suggestions');
+
+      if (e.key === 'Tab' && currentSuggestions.length > 0) {
+        e.preventDefault();
+        input.value = currentSuggestions[selectedSuggestionIndex] + ' ';
+        selectedSuggestionIndex = (selectedSuggestionIndex + 1) % currentSuggestions.length;
+        renderSuggestions(box, input);
+      } else if (e.key === 'Escape') {
+        hideSuggestions(box);
+      }
+    }
+
     async function sendMessage(e) {
       if (e) e.preventDefault();
+      hideSuggestions(document.getElementById('chat-suggestions'));
+
       const input = document.getElementById('message-input');
       const text = input.value.trim();
       if (!text || !supabaseClient || !currentUser) return;
@@ -1088,11 +1201,26 @@
 
     function closeTerminalModal() {
       document.getElementById('op-terminal-modal').style.display = 'none';
+      hideSuggestions(document.getElementById('terminal-suggestions'));
     }
 
     async function handleTerminalKeydown(e) {
+      const input = e.target;
+      const box = document.getElementById('terminal-suggestions');
+
+      if (e.key === 'Tab' && currentSuggestions.length > 0) {
+        e.preventDefault();
+        input.value = currentSuggestions[selectedSuggestionIndex] + ' ';
+        selectedSuggestionIndex = (selectedSuggestionIndex + 1) % currentSuggestions.length;
+        renderSuggestions(box, input);
+        return;
+      } else if (e.key === 'Escape') {
+        hideSuggestions(box);
+        return;
+      }
+
       if (e.key === 'Enter') {
-        const input = document.getElementById('terminal-cmd-input');
+        hideSuggestions(box);
         const cmd = input.value.trim();
         if (!cmd) return;
 
