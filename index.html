@@ -99,7 +99,7 @@
     .message.received { align-self: flex-start; }
     .message-content { display: flex; flex-direction: column; }
     .message.sent .message-content { align-items: flex-end; }
-    .message-meta { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px; display: flex; gap: 8px; }
+    .message-meta { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px; display: flex; gap: 6px; align-items: center; }
     .message-bubble { padding: 10px 14px; border-radius: 10px; font-size: 0.95rem; line-height: 1.4; word-break: break-word; }
     .message.sent .message-bubble { background: var(--accent); color: white; border-bottom-right-radius: 2px; }
     .message.received .message-bubble { background: var(--bg-panel-light); color: var(--text-main); border-bottom-left-radius: 2px; }
@@ -318,7 +318,7 @@
 
   <script>
     const SUPABASE_URL = "https://ssbgkbwnuqxyywgcvvqs.supabase.co";
-    const SUPABASE_ANON_KEY = "sb_publishable_R5rjoKAt7A0g384nmmnZiQ_Y5LcKmQy";
+    const SUPABASE_ANON_KEY = "PASTE_YOUR_FRESH_ANON_KEY_HERE";
 
     let supabaseClient = null;
     let currentUser = null;
@@ -333,7 +333,6 @@
     let messages = [];
     let realtimeChannel = null;
 
-    // --- SECURITY: XSS Sanitization Helper ---
     function escapeHTML(str) {
       if (!str) return '';
       return String(str)
@@ -342,6 +341,14 @@
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#039;');
+    }
+
+    function formatTime(timestamp) {
+      if (!timestamp) return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const date = new Date(timestamp);
+      return isNaN(date.getTime())
+        ? new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     }
 
     document.addEventListener('DOMContentLoaded', async () => {
@@ -363,7 +370,6 @@
       if (authForm) authForm.addEventListener('submit', handleAuth);
       if (authToggleBtn) authToggleBtn.addEventListener('click', toggleAuthMode);
 
-      // Robust Auth Session Listener
       supabaseClient.auth.onAuthStateChange(async (event, session) => {
         if (session && session.user) {
           await fetchCurrentProfile(session.user);
@@ -413,7 +419,6 @@
     function subscribeRealtime() {
       if (!supabaseClient || realtimeChannel) return;
 
-      // Realtime listener for message INSERTS only (Low Bandwidth)
       realtimeChannel = supabaseClient.channel('realtime-messages')
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, async (payload) => {
           const newMsg = payload.new;
@@ -750,7 +755,6 @@
       const { data } = await query.order('created_at', { ascending: false }).limit(50);
       messages = (data || []).reverse();
 
-      // Ensure sender profiles are cached
       const senderIds = [...new Set(messages.map(m => m.sender_id))];
       const uncached = senderIds.filter(id => !userCache[id]);
       if (uncached.length > 0) {
@@ -775,12 +779,17 @@
 
       const isSent = m.sender_id === currentUser.id;
       const senderUser = userCache[m.sender_id] || { username: m.sender_name || 'User' };
+      const formattedTime = formatTime(m.created_at);
+
       const div = document.createElement('div');
       div.className = `message ${isSent ? 'sent' : 'received'}`;
       
       div.innerHTML = `${renderAvatarHTML(senderUser)}
         <div class="message-content">
-          <div class="message-meta"><span>${isSent ? 'You' : escapeHTML(getFormattedUserDisplay(senderUser))}</span></div>
+          <div class="message-meta">
+            <span>${isSent ? 'You' : escapeHTML(getFormattedUserDisplay(senderUser))}</span>
+            <span style="font-size:0.7rem; opacity:0.8;">• ${formattedTime}</span>
+          </div>
           <div class="message-bubble">${escapeHTML(m.text)}</div>
         </div>`;
       
@@ -861,7 +870,6 @@
       alert('Settings saved!');
     }
 
-    // --- BUCKET STORAGE WITH CANVAS FALLBACK ---
     async function handlePFPUpload(e) {
       const file = e.target.files[0];
       if (!file) return;
@@ -873,13 +881,11 @@
       const fileExt = file.name.split('.').pop();
       const filePath = `${currentUser.id}/${Date.now()}.${fileExt}`;
 
-      // Try Supabase Storage upload
       const { error: uploadErr } = await supabaseClient.storage
         .from('avatars')
         .upload(filePath, file, { upsert: true });
 
       if (uploadErr) {
-        // Fallback: compress canvas thumbnail locally if storage bucket doesn't exist
         compressImage(file, (compressedBase64) => {
           tempUploadedPFP = compressedBase64;
           showPFPPreview(tempUploadedPFP);
