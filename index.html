@@ -935,8 +935,8 @@
       const box = document.getElementById(isTerminal ? 'terminal-suggestions' : 'chat-suggestions');
       const val = input.value;
 
-      // Allow autocomplete if in OP Mode or if typing /enteropmode
-      if (val.startsWith('/') && (isOpMode || '/enteropmode'.startsWith(val.toLowerCase()))) {
+      // Suggestions display ONLY when the user is already in OP Mode
+      if (isOpMode && val.startsWith('/')) {
         currentSuggestions = OP_COMMANDS.filter(cmd => cmd.toLowerCase().startsWith(val.toLowerCase()));
         
         if (currentSuggestions.length > 0) {
