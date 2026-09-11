@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>FlashTalk</title>
+  <title>FlashTalk v2.0 - Complete Platform</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     :root {
@@ -18,6 +18,7 @@
       --border-color: #374151;
       --danger: #ef4444;
       --warning: #f59e0b;
+      --success: #10b981;
       --base-font-size: 14px;
     }
 
@@ -56,12 +57,14 @@
     .input-group label { display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 6px; }
     .input-group input, .input-group select, .input-group textarea { width: 100%; padding: 10px 12px; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); outline: none; font-size: 0.95rem; }
     .input-group input:focus, .input-group select:focus, .input-group textarea:focus { border-color: var(--accent); }
-    .btn { width: 100%; padding: 10px; background: var(--accent); color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+    
+    .btn { width: 100%; padding: 10px; background: var(--accent); color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; transition: background 0.2s; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
     .btn:hover { background: var(--accent-hover); }
     .btn-secondary { background: var(--bg-panel-light); border: 1px solid var(--border-color); color: var(--text-main); }
     .btn-secondary:hover { background: var(--border-color); }
-    .btn-danger { background: var(--danger); }
+    .btn-danger { background: var(--danger); color: white; }
     .btn-danger:hover { background: #dc2626; }
+    .btn-sm { padding: 4px 8px; font-size: 0.8rem; width: auto; }
     .auth-toggle { margin-top: 16px; text-align: center; font-size: 0.85rem; color: var(--text-muted); cursor: pointer; }
     .auth-toggle:hover { color: var(--text-main); text-decoration: underline; }
 
@@ -72,19 +75,24 @@
     .user-profile-btn { margin-top: auto; border-radius: 50%; overflow: hidden; background: #4b5563; }
     .user-profile-btn img { width: 100%; height: 100%; object-fit: cover; }
 
+    .nav-badge { position: absolute; top: -4px; right: -4px; background: var(--danger); color: white; font-size: 0.7rem; font-weight: bold; border-radius: 10px; padding: 2px 6px; min-width: 18px; text-align: center; }
+
     #sub-sidebar { width: 280px; background: var(--bg-panel); border-right: 1px solid var(--border-color); display: flex; flex-direction: column; }
     .sidebar-header { padding: 16px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; }
     .sidebar-header h3 { font-size: 1.1rem; }
     .sidebar-content { flex: 1; overflow-y: auto; padding: 10px; }
-    .list-item { padding: 12px; border-radius: 8px; cursor: pointer; margin-bottom: 4px; background: transparent; transition: background 0.2s; display: flex; align-items: center; gap: 10px; }
+    .list-item { padding: 12px; border-radius: 8px; cursor: pointer; margin-bottom: 4px; background: transparent; transition: background 0.2s; display: flex; align-items: center; gap: 10px; position: relative; }
     .list-item:hover { background: var(--bg-panel-light); }
     .list-item.active { background: var(--bg-panel-light); border-left: 3px solid var(--accent); }
-    .list-item .title { font-weight: 600; font-size: 0.95rem; color: var(--text-main); }
+    .list-item .title { font-weight: 600; font-size: 0.95rem; color: var(--text-main); display: flex; justify-content: space-between; align-items: center; width: 100%; }
     .list-item .subtitle { font-size: 0.8rem; color: var(--text-muted); margin-top: 2px; }
     .list-item .item-info { flex: 1; overflow: hidden; }
     .list-item .item-info div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-    .avatar { width: 38px; height: 38px; border-radius: 50%; background: var(--bg-panel-light); display: flex; align-items: center; justify-content: center; font-weight: bold; color: var(--text-main); flex-shrink: 0; object-fit: cover; border: 1px solid var(--border-color); }
+    .avatar-container { position: relative; flex-shrink: 0; }
+    .avatar { width: 38px; height: 38px; border-radius: 50%; background: var(--bg-panel-light); display: flex; align-items: center; justify-content: center; font-weight: bold; color: var(--text-main); object-fit: cover; border: 1px solid var(--border-color); }
+    .status-indicator { position: absolute; bottom: 0; right: 0; width: 10px; height: 10px; border-radius: 50%; background: #6b7280; border: 2px solid var(--bg-panel); }
+    .status-indicator.online { background: var(--success); }
 
     .search-box { padding: 10px; border-bottom: 1px solid var(--border-color); }
     .search-box input { width: 100%; padding: 8px 12px; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-size: 0.85rem; outline: none; }
@@ -95,30 +103,47 @@
     #chat-header { height: 60px; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; padding: 0 20px; background: var(--bg-panel); }
     #messages-container { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
     
-    .message { display: flex; gap: 10px; max-width: 75%; }
+    .message { display: flex; gap: 10px; max-width: 75%; position: relative; }
     .message.sent { align-self: flex-end; flex-direction: row-reverse; }
     .message.received { align-self: flex-start; }
-    .message-content { display: flex; flex-direction: column; }
+    .message-content { display: flex; flex-direction: column; max-width: 100%; }
     .message.sent .message-content { align-items: flex-end; }
     .message-meta { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px; display: flex; gap: 6px; align-items: center; }
-    .message-bubble { padding: 10px 14px; border-radius: 10px; font-size: 0.95rem; line-height: 1.4; word-break: break-word; }
+    .message-bubble { padding: 10px 14px; border-radius: 10px; font-size: 0.95rem; line-height: 1.4; word-break: break-word; position: relative; }
     .message.sent .message-bubble { background: var(--accent); color: white; border-bottom-right-radius: 2px; }
     .message.received .message-bubble { background: var(--bg-panel-light); color: var(--text-main); border-bottom-left-radius: 2px; }
     .message.announcement .message-bubble { background: #1e1b4b; border: 1px solid #6366f1; color: #e0e7ff; }
     .message.system .message-bubble { background: #312e81; color: #c7d2fe; font-style: italic; }
 
-    .op-badge { background: #f59e0b; color: #000; font-weight: bold; font-size: 0.65rem; padding: 1px 4px; border-radius: 4px; text-transform: uppercase; }
+    .message-attachment-img { max-width: 260px; max-height: 200px; border-radius: 6px; margin-top: 6px; display: block; cursor: pointer; border: 1px solid rgba(255,255,255,0.1); }
+    .message-attachment-file { display: flex; align-items: center; gap: 8px; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 6px; margin-top: 6px; color: var(--text-main); text-decoration: none; font-size: 0.85rem; }
 
-    #message-input-area { padding: 16px; background: var(--bg-panel); border-top: 1px solid var(--border-color); display: flex; gap: 12px; }
+    .message-actions { display: none; position: absolute; top: -12px; right: 8px; background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 6px; padding: 2px 4px; gap: 4px; z-index: 10; }
+    .message.sent .message-actions { left: 8px; right: auto; }
+    .message:hover .message-actions { display: flex; }
+    .action-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 2px 4px; font-size: 0.8rem; border-radius: 4px; }
+    .action-btn:hover { color: var(--text-main); background: var(--bg-panel-light); }
 
-    .suggestion-wrapper { position: relative; flex: 1; display: flex; }
-    .suggestion-wrapper input { flex: 1; padding: 12px 16px; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-main); outline: none; }
+    #typing-bar { height: 22px; padding: 0 20px; font-size: 0.75rem; color: var(--text-muted); font-style: italic; display: flex; align-items: center; }
+
+    #message-input-area { padding: 12px 16px; background: var(--bg-panel); border-top: 1px solid var(--border-color); display: flex; gap: 8px; align-items: center; position: relative; }
+
+    .suggestion-wrapper { position: relative; flex: 1; display: flex; align-items: center; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 8px; padding: 0 8px; }
+    .suggestion-wrapper input { flex: 1; padding: 10px 8px; background: transparent; border: none; color: var(--text-main); outline: none; }
+
+    .input-tool-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 1.2rem; padding: 6px; border-radius: 6px; display: flex; align-items: center; justify-content: center; }
+    .input-tool-btn:hover { color: var(--text-main); background: var(--bg-panel-light); }
+
+    .emoji-popover { position: absolute; bottom: calc(100% + 10px); right: 0; background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px; display: none; grid-template-columns: repeat(6, 1fr); gap: 6px; z-index: 60; box-shadow: 0 4px 16px rgba(0,0,0,0.4); }
+    .emoji-item { font-size: 1.3rem; cursor: pointer; text-align: center; padding: 4px; border-radius: 4px; }
+    .emoji-item:hover { background: var(--bg-panel-light); }
+
+    .attachment-preview { position: absolute; bottom: calc(100% + 8px); left: 16px; background: var(--bg-panel); border: 1px solid var(--border-color); padding: 8px 12px; border-radius: 8px; display: none; align-items: center; gap: 10px; z-index: 55; }
 
     .suggestion-box {
       position: absolute;
       bottom: calc(100% + 8px);
-      left: 0;
-      right: 0;
+      left: 0; right: 0;
       background: var(--bg-panel);
       border: 1px solid var(--border-color);
       border-radius: 8px;
@@ -138,17 +163,11 @@
       justify-content: space-between;
       border-bottom: 1px solid rgba(255,255,255,0.05);
     }
-    .suggestion-item:last-child { border-bottom: none; }
     .suggestion-item.active { background: var(--accent); color: #ffffff; }
 
     #settings-view { flex: 1; padding: 30px; overflow-y: auto; display: none; max-width: 700px; margin: 0 auto; width: 100%; }
     .settings-section { background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 10px; padding: 20px; margin-bottom: 24px; }
     .settings-section h4 { margin-bottom: 16px; font-size: 1.1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 8px; }
-    .pfp-picker { display: flex; align-items: flex-start; gap: 20px; margin-bottom: 16px; }
-    .pfp-picker img { width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 2px solid var(--accent); }
-    .pfp-actions { display: flex; flex-direction: column; gap: 8px; }
-    .pfp-actions-row { display: flex; gap: 8px; flex-wrap: wrap; }
-    .bio-counter { font-size: 0.75rem; color: var(--text-muted); text-align: right; margin-top: 4px; }
 
     .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: none; justify-content: center; align-items: center; z-index: 200; }
     .modal-card { background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 12px; padding: 24px; width: 400px; max-height: 80vh; display: flex; flex-direction: column; }
@@ -156,7 +175,7 @@
     .user-select-list { flex: 1; overflow-y: auto; max-height: 200px; margin: 12px 0; border: 1px solid var(--border-color); border-radius: 6px; padding: 8px; }
     .user-select-item { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 0.9rem; }
 
-    /* Operator Terminal Prompt Styling */
+    /* Operator Console */
     #op-terminal-modal .modal-card { width: 650px; background: #0c0c0e; border: 1px solid #10b981; font-family: monospace; }
     .terminal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #10b981; padding-bottom: 8px; margin-bottom: 12px; color: #10b981; }
     .terminal-body { background: #000; border: 1px solid #1e293b; height: 260px; overflow-y: auto; padding: 12px; color: #10b981; font-family: monospace; font-size: 0.85rem; margin-bottom: 12px; border-radius: 6px; }
@@ -196,9 +215,15 @@
     <div id="nav-bar">
       <div class="nav-icon active" onclick="switchTab('public')" title="Public Chat">🌐</div>
       <div class="nav-icon" onclick="switchTab('discussions')" title="Public Discussions">💬</div>
-      <div class="nav-icon" onclick="switchTab('groups')" title="Private Groups">👥</div>
-      <div class="nav-icon" onclick="switchTab('dms')" title="Direct Messages">✉️</div>
-      <div class="nav-icon" onclick="switchTab('friends')" title="Friends List">🤝</div>
+      <div class="nav-icon" onclick="switchTab('groups')" title="Private Groups">
+        👥 <span class="nav-badge" id="badge-groups" style="display:none;">0</span>
+      </div>
+      <div class="nav-icon" onclick="switchTab('dms')" title="Direct Messages">
+        ✉️ <span class="nav-badge" id="badge-dms" style="display:none;">0</span>
+      </div>
+      <div class="nav-icon" onclick="switchTab('friends')" title="Friends & Requests">
+        🤝 <span class="nav-badge" id="badge-friends" style="display:none;">0</span>
+      </div>
       <div class="nav-icon" onclick="switchTab('search')" title="Find Users">🔍</div>
       <div class="nav-icon user-profile-btn" id="nav-user-pfp" onclick="switchTab('settings')" title="Account & Settings">
         <span id="nav-user-initial">U</span>
@@ -208,7 +233,7 @@
     <div id="sub-sidebar">
       <div class="sidebar-header">
         <h3 id="sidebar-title">Public Chat</h3>
-        <button id="sidebar-action-btn" class="btn" style="width: auto; padding: 4px 8px; font-size: 0.8rem; display: none;"></button>
+        <button id="sidebar-action-btn" class="btn btn-sm" style="display: none;"></button>
       </div>
       <div class="search-box" id="sidebar-search-container" style="display: none;">
         <input type="text" id="sidebar-search-input" placeholder="Search users..." oninput="handleSearch(this.value)">
@@ -223,18 +248,51 @@
             <h3 id="target-title">General Public Chat</h3>
             <p id="target-subtitle" style="font-size: 0.8rem; color: var(--text-muted);">Everyone can talk here</p>
           </div>
-          <!-- Operator Console Button (Hidden by default until OP mode is active) -->
-          <button id="op-console-btn" class="btn btn-secondary" style="width: auto; padding: 6px 12px; font-size: 0.85rem; display: none;" onclick="openTerminalModal()" title="Operator Command Console">
-            &gt;_ Operator Console
-          </button>
+          <div style="display:flex; gap:8px;">
+            <button id="group-manage-btn" class="btn btn-secondary btn-sm" style="display:none;" onclick="openGroupManageModal()">⚙️ Manage Group</button>
+            <button id="op-console-btn" class="btn btn-secondary btn-sm" style="display: none;" onclick="openTerminalModal()">
+              &gt;_ Operator Console
+            </button>
+          </div>
         </div>
+
         <div id="messages-container"></div>
+        
+        <div id="typing-bar"></div>
+
         <form id="message-input-area" onsubmit="sendMessage(event)">
+          <div class="attachment-preview" id="attachment-preview">
+            <span id="attachment-name" style="font-size: 0.85rem;"></span>
+            <button type="button" class="action-btn" onclick="clearPendingAttachment()">✕</button>
+          </div>
+
+          <label class="input-tool-btn" title="Attach File or Photo">
+            📎
+            <input type="file" id="chat-file-input" style="display:none;" onchange="handleFileSelect(event)">
+          </label>
+
           <div class="suggestion-wrapper">
             <div id="chat-suggestions" class="suggestion-box"></div>
-            <input type="text" id="message-input" placeholder="Type a message or /command..." required autocomplete="off" oninput="handleInputSuggestions(event)" onkeydown="handleInputKeydown(event)">
+            <input type="text" id="message-input" placeholder="Type a message or /command... (*bold*, _italic_, `code`)" required autocomplete="off" oninput="handleTypingAndSuggestions(event)" onkeydown="handleInputKeydown(event)">
+            <button type="button" class="input-tool-btn" onclick="toggleEmojiPicker(event)">😀</button>
           </div>
-          <button type="submit" class="btn" style="width: auto; padding: 0 20px;">Send</button>
+
+          <div class="emoji-popover" id="emoji-popover">
+            <span class="emoji-item" onclick="insertEmoji('👍')">👍</span>
+            <span class="emoji-item" onclick="insertEmoji('❤️')">❤️</span>
+            <span class="emoji-item" onclick="insertEmoji('😂')">😂</span>
+            <span class="emoji-item" onclick="insertEmoji('🔥')">🔥</span>
+            <span class="emoji-item" onclick="insertEmoji('🎉')">🎉</span>
+            <span class="emoji-item" onclick="insertEmoji('🚀')">🚀</span>
+            <span class="emoji-item" onclick="insertEmoji('👀')">👀</span>
+            <span class="emoji-item" onclick="insertEmoji('✨')">✨</span>
+            <span class="emoji-item" onclick="insertEmoji('🙌')">🙌</span>
+            <span class="emoji-item" onclick="insertEmoji('💯')">💯</span>
+            <span class="emoji-item" onclick="insertEmoji('💡')">💡</span>
+            <span class="emoji-item" onclick="insertEmoji('✅')">✅</span>
+          </div>
+
+          <button type="submit" class="btn" style="width: auto; padding: 0 16px;">Send</button>
         </form>
       </div>
 
@@ -243,31 +301,37 @@
 
         <div class="settings-section">
           <h4>Profile Customization</h4>
-          <div class="pfp-picker">
-            <img id="settings-pfp-preview" src="" alt="Profile Preview" style="display:none;">
-            <div id="settings-pfp-placeholder" class="avatar" style="width: 80px; height: 80px; font-size: 2rem;">?</div>
-            <div class="pfp-actions">
-              <div class="pfp-actions-row">
-                <label class="btn btn-secondary" style="display: inline-block; width: auto; cursor: pointer; padding: 6px 12px; font-size: 0.85rem;">
-                  Upload Picture
-                  <input type="file" id="pfp-file-input" accept="image/*" style="display:none;" onchange="handlePFPUpload(event)">
-                </label>
-                <button type="button" class="btn btn-secondary" style="width: auto; padding: 6px 12px; font-size: 0.85rem;" onclick="removePFP()">Remove</button>
-              </div>
-              <div class="pfp-actions-row">
-                <button type="button" class="btn btn-secondary" style="width: auto; padding: 6px 12px; font-size: 0.85rem;" onclick="openChangePasswordModal()">Change Password</button>
-                <button type="button" class="btn btn-danger" style="width: auto; padding: 6px 12px; font-size: 0.85rem;" onclick="logout()">Log Out</button>
-              </div>
-            </div>
-          </div>
           <div class="input-group">
             <label for="settings-username">Username</label>
             <input type="text" id="settings-username" required>
           </div>
           <div class="input-group">
+            <label for="settings-pfp">Profile Picture URL</label>
+            <input type="text" id="settings-pfp" placeholder="https://example.com/avatar.png">
+          </div>
+          <div class="input-group">
             <label for="settings-bio">Bio (Max 100 characters)</label>
-            <textarea id="settings-bio" rows="2" maxlength="100" oninput="updateBioCount()"></textarea>
-            <div class="bio-counter" id="bio-char-count">0 / 100</div>
+            <textarea id="settings-bio" rows="2" maxlength="100"></textarea>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h4>Appearance & Accessibility</h4>
+          <div class="input-group">
+            <label for="settings-theme">Theme</label>
+            <select id="settings-theme">
+              <option value="dark">Dark Theme</option>
+              <option value="light">Light Theme</option>
+              <option value="high-contrast">High Contrast Theme</option>
+            </select>
+          </div>
+          <div class="input-group">
+            <label for="settings-font">Font Size</label>
+            <select id="settings-font">
+              <option value="small">Small</option>
+              <option value="medium">Medium</option>
+              <option value="large">Large</option>
+            </select>
           </div>
         </div>
 
@@ -276,67 +340,10 @@
           <p style="font-size: 0.85rem; color: var(--text-muted);">
             Status: <strong id="op-status-text" style="color: var(--text-main);">User Mode</strong>
           </p>
-          <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 6px;">
-            Type <code>/enteropmode</code> in any chat to enter Operator mode secretly.
-          </p>
         </div>
 
-        <div class="settings-section">
-          <h4>Share FlashTalk</h4>
-          <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
-            Copy and share the web app link with your friends so they can join you on FlashTalk.
-          </p>
-          <div style="display: flex; gap: 8px;">
-            <input type="text" id="share-link-input" readonly style="flex: 1; padding: 8px 12px; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-size: 0.85rem;" onclick="this.select()">
-            <button type="button" class="btn btn-secondary" id="settings-copy-btn" style="width: auto; padding: 8px 16px; font-size: 0.85rem; white-space: nowrap;" onclick="copyInviteLink('settings-copy-btn')">🔗 Copy Link</button>
-          </div>
-        </div>
-
-        <div class="settings-section">
-          <h4>Accessibility & Display</h4>
-          <div class="input-group">
-            <label for="settings-display-mode">Display Names in Chat</label>
-            <select id="settings-display-mode">
-              <option value="username">Username Only (@johndoe)</option>
-              <option value="email">Email Only (user@example.com)</option>
-              <option value="both">Both (Username & Email)</option>
-            </select>
-          </div>
-          <div class="input-group">
-            <label for="settings-font-size">Font Size</label>
-            <select id="settings-font-size">
-              <option value="small">Small</option>
-              <option value="medium" selected>Medium (Default)</option>
-              <option value="large">Large</option>
-            </select>
-          </div>
-          <div class="input-group">
-            <label for="settings-theme">Theme Mode</label>
-            <select id="settings-theme">
-              <option value="dark">Dark Theme (Default)</option>
-              <option value="light">Light Theme</option>
-              <option value="high-contrast">High Contrast</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="settings-section">
-          <h4>Personalization</h4>
-          <div class="input-group">
-            <label for="settings-accent-color">Accent Theme Color</label>
-            <input type="color" id="settings-accent-color" value="#6366f1" style="height: 40px; cursor: pointer;">
-          </div>
-        </div>
-
-        <button class="btn" onclick="saveUserSettings()" style="margin-bottom: 24px;">Save Settings</button>
-
-        <div class="settings-section" style="border-color: var(--danger);">
-          <h4 style="color: var(--danger); border-bottom-color: var(--danger);">Danger Zone</h4>
-          <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
-            Permanently delete your FlashTalk account and erase all profile data. This action cannot be undone.
-          </p>
-          <button type="button" class="btn btn-danger" onclick="deleteAccount()">Delete Account</button>
-        </div>
+        <button class="btn" onclick="saveUserSettings()">Save Settings</button>
+        <button type="button" class="btn btn-danger" style="margin-top:12px;" onclick="logout()">Log Out</button>
       </div>
     </div>
   </div>
@@ -349,7 +356,7 @@
         <input type="text" id="modal-input-name" required>
       </div>
       <div id="group-user-selection" style="display: none;">
-        <label style="font-size: 0.85rem; color: var(--text-muted);">Select Members:</label>
+        <label style="font-size: 0.85rem; color: var(--text-muted);">Select Initial Members:</label>
         <div class="user-select-list" id="modal-user-list"></div>
       </div>
       <div style="display: flex; gap: 8px; margin-top: 12px;">
@@ -359,40 +366,35 @@
     </div>
   </div>
 
-  <div class="modal" id="password-modal">
+  <div class="modal" id="group-manage-modal">
     <div class="modal-card">
-      <h3>Change Password</h3>
+      <h3>Manage Group</h3>
       <div class="input-group">
-        <label for="new-password-input">New Password</label>
-        <input type="password" id="new-password-input" placeholder="Enter new password" required>
+        <label for="edit-group-name">Group Name</label>
+        <input type="text" id="edit-group-name">
       </div>
-      <div class="input-group">
-        <label for="confirm-password-input">Confirm New Password</label>
-        <input type="password" id="confirm-password-input" placeholder="Confirm new password" required>
-      </div>
-      <div style="display: flex; gap: 8px; margin-top: 12px;">
-        <button type="button" class="btn btn-secondary" onclick="closePasswordModal()">Cancel</button>
-        <button type="button" class="btn" onclick="submitPasswordChange()">Update Password</button>
+      <div style="display:flex; flex-direction:column; gap:8px; margin-top:12px;">
+        <button type="button" class="btn" onclick="updateGroupName()">Save Name</button>
+        <button type="button" class="btn btn-danger" onclick="leaveGroup()">Leave Group</button>
+        <button type="button" class="btn btn-secondary" onclick="closeGroupManageModal()">Close</button>
       </div>
     </div>
   </div>
 
-  <!-- Operator Command Terminal Modal -->
   <div class="modal" id="op-terminal-modal">
     <div class="modal-card">
       <div class="terminal-header">
-        <span>⚡ FlashTalk Operator Control Console v1.0</span>
-        <button type="button" class="btn btn-secondary" style="width: auto; padding: 2px 8px; font-size: 0.75rem;" onclick="closeTerminalModal()">✕ Close</button>
+        <span>⚡ FlashTalk Operator Control Console v2.0</span>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="closeTerminalModal()">✕ Close</button>
       </div>
       <div class="terminal-body" id="terminal-logs">
         <div class="terminal-line sys">FlashTalk Operator Subsystem Loaded.</div>
-        <div class="terminal-line">Type /help for available operator commands.</div>
       </div>
       <div class="terminal-input-container">
         <span class="terminal-prefix">&gt;</span>
         <div class="suggestion-wrapper">
           <div id="terminal-suggestions" class="suggestion-box"></div>
-          <input type="text" id="terminal-cmd-input" placeholder="Enter command (e.g., /help, /clear, /user ban)..." oninput="handleInputSuggestions(event)" onkeydown="handleTerminalKeydown(event)">
+          <input type="text" id="terminal-cmd-input" placeholder="Enter command..." oninput="handleTypingAndSuggestions(event)" onkeydown="handleTerminalKeydown(event)">
         </div>
       </div>
     </div>
@@ -402,23 +404,11 @@
     const SUPABASE_URL = "https://ssbgkbwnuqxyywgcvvqs.supabase.co";
     const SUPABASE_ANON_KEY = "sb_publishable_R5rjoKAt7A0g384nmmnZiQ_Y5LcKmQy";
 
-    // Operator Mode state (Local mode, default password "admin123")
     let isOpMode = false;
     let opCode = localStorage.getItem('op_code') || "admin123";
 
-    // Alphabetically pre-sorted list of Operator commands
     const OP_COMMANDS = [
-      '/announce',
-      '/clear',
-      '/enteropmode',
-      '/exitopmode',
-      '/help',
-      '/mute',
-      '/setopcode',
-      '/slowmode',
-      '/unmute',
-      '/user ban',
-      '/user kick'
+      '/announce', '/clear', '/enteropmode', '/exitopmode', '/help', '/mute', '/setopcode', '/slowmode', '/unmute', '/user ban', '/user kick'
     ].sort();
 
     let currentSuggestions = [];
@@ -429,60 +419,47 @@
     let isRegister = false;
     let currentTab = 'public';
     let activeTarget = { type: 'public', id: 'global' };
-    let tempUploadedPFP = null;
+    let activeCreateType = 'discussion';
 
     let userCache = {};
     let discussions = [];
     let groups = [];
     let messages = [];
-    let realtimeChannel = null;
+    let friendRequests = [];
+    let onlineUsersMap = {};
+    let typingUsersMap = {};
+    let unreadCounts = { dms: {}, groups: {}, friends: 0 };
 
-    let slowmodeSeconds = 0;
-    let lastSentTimestamp = 0;
+    let pendingAttachment = null;
+    let typingTimeout = null;
 
     function escapeHTML(str) {
       if (!str) return '';
-      return String(str)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#039;');
+      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
     }
 
-    function formatTime(timestamp) {
-      if (!timestamp) return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      const date = new Date(timestamp);
-      return isNaN(date.getTime())
-        ? new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    function parseMarkdown(text) {
+      if (!text) return '';
+      let str = escapeHTML(text);
+      str = str.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+      str = str.replace(/_(.*?)_/g, '<em>$1</em>');
+      str = str.replace(/`(.*?)`/g, '<code>$1</code>');
+      return str;
     }
 
     document.addEventListener('DOMContentLoaded', async () => {
-      try {
-        if (window.supabase && window.supabase.createClient) {
-          supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        } else {
-          alert("Database library failed to load. Please refresh.");
-          return;
-        }
-      } catch (err) {
-        console.error("Supabase initialization failed:", err);
-        return;
-      }
+      if (window.supabase && window.supabase.createClient) {
+        supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      } else return;
 
-      const authForm = document.getElementById('auth-form');
-      const authToggleBtn = document.getElementById('auth-toggle-btn');
-
-      if (authForm) authForm.addEventListener('submit', handleAuth);
-      if (authToggleBtn) authToggleBtn.addEventListener('click', toggleAuthMode);
+      document.getElementById('auth-form').addEventListener('submit', handleAuth);
+      document.getElementById('auth-toggle-btn').addEventListener('click', toggleAuthMode);
 
       supabaseClient.auth.onAuthStateChange(async (event, session) => {
         if (session && session.user) {
           await fetchCurrentProfile(session.user);
           initApp();
         } else {
-          currentUser = null;
           document.getElementById('auth-screen').style.display = 'flex';
           document.getElementById('app').style.display = 'none';
         }
@@ -490,415 +467,384 @@
     });
 
     async function fetchCurrentProfile(authUser) {
-      let { data: profile } = await supabaseClient
-        .from('profiles')
-        .select('*')
-        .eq('id', authUser.id)
-        .maybeSingle();
-
+      let { data: profile } = await supabaseClient.from('profiles').select('*').eq('id', authUser.id).maybeSingle();
       if (!profile) {
         profile = {
           id: authUser.id,
           email: authUser.email,
           username: authUser.user_metadata?.username || authUser.email.split('@')[0],
-          pfp: '',
-          bio: '',
-          is_banned: false,
-          is_muted: false,
-          friends: [],
-          settings: { displayMode: 'username', fontSize: 'medium', theme: 'dark', accentColor: '#6366f1' }
+          pfp: '', bio: '', is_banned: false, is_muted: false, friends: [],
+          settings: { theme: 'dark', fontSize: 'medium' }
         };
         await supabaseClient.from('profiles').upsert([profile]);
       }
-
       currentUser = profile;
       userCache[currentUser.id] = currentUser;
     }
 
     async function initApp() {
-      if (!currentUser) return;
-
-      if (currentUser.is_banned) {
-        alert("Your account has been banned by an Operator.");
-        if (supabaseClient) await supabaseClient.auth.signOut();
+      if (!currentUser || currentUser.is_banned) {
+        alert("Your account is suspended or invalid.");
         return;
       }
-
       document.getElementById('auth-screen').style.display = 'none';
       document.getElementById('app').style.display = 'flex';
 
       applyUserSettings();
-      subscribeRealtime();
+      subscribePresence();
+      subscribeRealtimeMessages();
+      await fetchFriendRequests();
       switchTab('public');
     }
 
-    function subscribeRealtime() {
-      if (!supabaseClient || realtimeChannel) return;
+    /* USER SETTINGS & ACCESSIBILITY */
+    function applyUserSettings() {
+      if (!currentUser) return;
+      const settings = currentUser.settings || { theme: 'dark', fontSize: 'medium' };
+      
+      document.body.className = '';
+      if (settings.theme === 'light') document.body.classList.add('theme-light');
+      if (settings.theme === 'high-contrast') document.body.classList.add('theme-high-contrast');
+      document.body.classList.add(`font-${settings.fontSize || 'medium'}`);
 
-      realtimeChannel = supabaseClient.channel('realtime-messages')
+      document.getElementById('settings-username').value = currentUser.username || '';
+      document.getElementById('settings-pfp').value = currentUser.pfp || '';
+      document.getElementById('settings-bio').value = currentUser.bio || '';
+      document.getElementById('settings-theme').value = settings.theme || 'dark';
+      document.getElementById('settings-font').value = settings.fontSize || 'medium';
+
+      const initialEl = document.getElementById('nav-user-initial');
+      const pfpBtn = document.getElementById('nav-user-pfp');
+      if (currentUser.pfp) {
+        pfpBtn.innerHTML = `<img src="${escapeHTML(currentUser.pfp)}" alt="Avatar">`;
+      } else {
+        pfpBtn.innerHTML = `<span>${escapeHTML((currentUser.username || 'U').charAt(0).toUpperCase())}</span>`;
+      }
+    }
+
+    async function saveUserSettings() {
+      const username = document.getElementById('settings-username').value.trim();
+      const pfp = document.getElementById('settings-pfp').value.trim();
+      const bio = document.getElementById('settings-bio').value.trim();
+      const theme = document.getElementById('settings-theme').value;
+      const fontSize = document.getElementById('settings-font').value;
+
+      if (!username) return alert("Username cannot be empty");
+
+      currentUser.username = username;
+      currentUser.pfp = pfp;
+      currentUser.bio = bio;
+      currentUser.settings = { theme, fontSize };
+
+      await supabaseClient.from('profiles').update({
+        username, pfp, bio, settings: currentUser.settings
+      }).eq('id', currentUser.id);
+
+      applyUserSettings();
+      alert("Settings updated successfully!");
+    }
+
+    /* PRESENCE & TYPING */
+    function subscribePresence() {
+      const room = supabaseClient.channel('presence-room', {
+        config: { presence: { key: currentUser.id } }
+      });
+
+      room.on('presence', { event: 'sync' }, () => {
+        const state = room.presenceState();
+        onlineUsersMap = {};
+        typingUsersMap = {};
+        for (let id in state) {
+          onlineUsersMap[id] = true;
+          const userState = state[id][0];
+          if (userState && userState.typingTarget === activeTarget.id) {
+            typingUsersMap[id] = userState.username;
+          }
+        }
+        updatePresenceUI();
+      }).subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await room.track({ username: currentUser.username, typingTarget: null });
+        }
+      });
+
+      window.presenceChannel = room;
+    }
+
+    function updatePresenceUI() {
+      document.querySelectorAll('.status-indicator').forEach(el => {
+        const uid = el.getAttribute('data-uid');
+        if (onlineUsersMap[uid]) el.classList.add('online');
+        else el.classList.remove('online');
+      });
+
+      const typingNames = Object.values(typingUsersMap).filter(name => name !== currentUser.username);
+      const typingBar = document.getElementById('typing-bar');
+      if (typingNames.length > 0) {
+        typingBar.textContent = `${typingNames.join(', ')} ${typingNames.length === 1 ? 'is' : 'are'} typing...`;
+      } else {
+        typingBar.textContent = '';
+      }
+    }
+
+    function handleTypingAndSuggestions(e) {
+      handleInputSuggestions(e);
+      if (window.presenceChannel) {
+        window.presenceChannel.track({ username: currentUser.username, typingTarget: activeTarget.id });
+        clearTimeout(typingTimeout);
+        typingTimeout = setTimeout(() => {
+          window.presenceChannel.track({ username: currentUser.username, typingTarget: null });
+        }, 3000);
+      }
+    }
+
+    /* REALTIME MESSAGES & BADGES */
+    function subscribeRealtimeMessages() {
+      supabaseClient.channel('realtime-messages')
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, async (payload) => {
-          const newMsg = payload.new;
-          if (isMsgForActiveTarget(newMsg)) {
-            if (!messages.some(m => m.id === newMsg.id)) {
-              messages.push(newMsg);
-              if (!userCache[newMsg.sender_id]) {
-                await fetchUserToCache(newMsg.sender_id);
-              }
-              appendSingleMessage(newMsg);
-            }
+          const m = payload.new;
+          if (isMsgForActiveTarget(m)) {
+            messages.push(m);
+            appendSingleMessage(m);
+          } else {
+            incrementUnread(m);
           }
         })
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, (payload) => {
+          const m = payload.new;
+          const idx = messages.findIndex(item => item.id === m.id);
+          if (idx !== -1) {
+            messages[idx] = m;
+            renderMessages();
+          }
+        })
+        .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages' }, (payload) => {
+          messages = messages.filter(item => item.id !== payload.old.id);
+          renderMessages();
+        })
         .subscribe();
+    }
+
+    function incrementUnread(m) {
+      if (m.target_type === 'dm') {
+        const sender = m.sender_id;
+        unreadCounts.dms[sender] = (unreadCounts.dms[sender] || 0) + 1;
+      } else if (m.target_type === 'group') {
+        unreadCounts.groups[m.target_id] = (unreadCounts.groups[m.target_id] || 0) + 1;
+      }
+      updateBadges();
+    }
+
+    function updateBadges() {
+      const dmTotal = Object.values(unreadCounts.dms).reduce((a, b) => a + b, 0);
+      const groupTotal = Object.values(unreadCounts.groups).reduce((a, b) => a + b, 0);
+
+      const bDm = document.getElementById('badge-dms');
+      bDm.style.display = dmTotal > 0 ? 'inline-block' : 'none';
+      bDm.textContent = dmTotal;
+
+      const bGroup = document.getElementById('badge-groups');
+      bGroup.style.display = groupTotal > 0 ? 'inline-block' : 'none';
+      bGroup.textContent = groupTotal;
+
+      const bFriends = document.getElementById('badge-friends');
+      const pendingReqs = friendRequests.filter(r => r.to_id === currentUser.id && r.status === 'pending').length;
+      bFriends.style.display = pendingReqs > 0 ? 'inline-block' : 'none';
+      bFriends.textContent = pendingReqs;
     }
 
     function isMsgForActiveTarget(m) {
       if (activeTarget.type === 'public' && m.target_type === 'public') return true;
       if (activeTarget.type === 'dm' && m.target_type === 'dm') {
-        return (m.sender_id === currentUser.id && m.target_id === activeTarget.id) ||
-               (m.sender_id === activeTarget.id && m.target_id === currentUser.id);
+        return (m.sender_id === currentUser.id && m.target_id === activeTarget.id) || (m.sender_id === activeTarget.id && m.target_id === currentUser.id);
       }
       return m.target_type === activeTarget.type && m.target_id === activeTarget.id;
     }
 
-    async function fetchUserToCache(userId) {
-      if (userCache[userId]) return userCache[userId];
-      const { data } = await supabaseClient.from('profiles').select('*').eq('id', userId).single();
-      if (data) userCache[data.id] = data;
-      return data;
+    /* FRIEND REQUEST SYSTEM */
+    async function fetchFriendRequests() {
+      const { data } = await supabaseClient.from('friend_requests').select('*')
+        .or(`from_id.eq.${currentUser.id},to_id.eq.${currentUser.id}`);
+      friendRequests = data || [];
+      updateBadges();
     }
 
-    function toggleAuthMode() {
-      isRegister = !isRegister;
-      document.getElementById('auth-title').textContent = isRegister ? 'Register for FlashTalk' : 'Login to FlashTalk';
-      document.getElementById('auth-submit-btn').textContent = isRegister ? 'Sign Up' : 'Sign In';
-      document.getElementById('auth-toggle-btn').textContent = isRegister ? 'Already have an account? Login' : 'Need an account? Register';
-      document.getElementById('username-group').style.display = isRegister ? 'block' : 'none';
+    async function sendFriendRequest(targetId) {
+      await supabaseClient.from('friend_requests').insert([{ from_id: currentUser.id, to_id: targetId, status: 'pending' }]);
+      await fetchFriendRequests();
+      loadTabSidebar();
+      alert("Friend request sent!");
     }
 
-    async function handleAuth(e) {
-      if (e) e.preventDefault();
-      if (!supabaseClient) return alert("Database is not connected.");
-
-      const email = document.getElementById('auth-email').value.trim().toLowerCase();
-      const password = document.getElementById('auth-password').value.trim();
-
-      if (isRegister) {
-        const username = document.getElementById('auth-username').value.trim();
-        if (!username) return alert('Please enter a username.');
-
-        const { data, error } = await supabaseClient.auth.signUp({
-          email: email,
-          password: password,
-          options: { data: { username: username } }
-        });
-
-        if (error) return alert("Registration Error: " + error.message);
-        alert("Registration complete! Logging in...");
-      } else {
-        const { error } = await supabaseClient.auth.signInWithPassword({
-          email: email,
-          password: password
-        });
-
-        if (error) return alert("Login error: " + error.message);
-      }
-    }
-
-    async function logout() {
-      if (supabaseClient) await supabaseClient.auth.signOut();
-      location.reload();
-    }
-
-    function openChangePasswordModal() {
-      document.getElementById('new-password-input').value = '';
-      document.getElementById('confirm-password-input').value = '';
-      document.getElementById('password-modal').style.display = 'flex';
-    }
-
-    function closePasswordModal() {
-      document.getElementById('password-modal').style.display = 'none';
-    }
-
-    async function submitPasswordChange() {
-      const newPassword = document.getElementById('new-password-input').value.trim();
-      const confirmPassword = document.getElementById('confirm-password-input').value.trim();
-
-      if (!newPassword) return alert("Please enter a new password.");
-      if (newPassword.length < 6) return alert("Password must be at least 6 characters long.");
-      if (newPassword !== confirmPassword) return alert("Passwords do not match.");
-
-      const { error } = await supabaseClient.auth.updateUser({ password: newPassword });
-      if (error) {
-        alert("Password change error: " + error.message);
-      } else {
-        alert("Password updated successfully!");
-        closePasswordModal();
-      }
-    }
-
-    function copyInviteLink(btnId) {
-      const appUrl = window.location.href;
-      
-      const copyToClipboard = (text) => {
-        if (navigator.clipboard && window.isSecureContext) {
-          return navigator.clipboard.writeText(text);
-        } else {
-          const textArea = document.createElement("textarea");
-          textArea.value = text;
-          textArea.style.position = "fixed";
-          textArea.style.left = "-999999px";
-          document.body.appendChild(textArea);
-          textArea.select();
-          return new Promise((resolve, reject) => {
-            document.execCommand('copy') ? resolve() : reject();
-            textArea.remove();
-          });
+    async function respondFriendRequest(reqId, status) {
+      if (status === 'accepted') {
+        const req = friendRequests.find(r => r.id === reqId);
+        if (req) {
+          let f1 = currentUser.friends || [];
+          if (!f1.includes(req.from_id)) f1.push(req.from_id);
+          await supabaseClient.from('profiles').update({ friends: f1 }).eq('id', currentUser.id);
         }
+      }
+      await supabaseClient.from('friend_requests').update({ status }).eq('id', reqId);
+      await fetchFriendRequests();
+      loadTabSidebar();
+    }
+
+    /* ATTACHMENT & EMOJI PICKER */
+    function toggleEmojiPicker(e) {
+      e.stopPropagation();
+      const pop = document.getElementById('emoji-popover');
+      pop.style.display = pop.style.display === 'grid' ? 'none' : 'grid';
+    }
+
+    function insertEmoji(emoji) {
+      const input = document.getElementById('message-input');
+      input.value += emoji;
+      document.getElementById('emoji-popover').style.display = 'none';
+      input.focus();
+    }
+
+    function handleFileSelect(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        pendingAttachment = { name: file.name, type: file.type.startsWith('image/') ? 'image' : 'file', data: evt.target.result };
+        document.getElementById('attachment-name').textContent = `📁 ${file.name}`;
+        document.getElementById('attachment-preview').style.display = 'flex';
       };
-
-      copyToClipboard(appUrl).then(() => {
-        if (btnId) {
-          const btn = document.getElementById(btnId);
-          if (btn) {
-            const origText = btn.textContent;
-            btn.textContent = "Copied! ✓";
-            setTimeout(() => { btn.textContent = origText; }, 2000);
-          }
-        } else {
-          alert("App link copied to clipboard!\n" + appUrl);
-        }
-      }).catch(() => {
-        alert("App link: " + appUrl);
-      });
+      reader.readAsDataURL(file);
     }
 
-    async function deleteAccount() {
-      const confirmFirst = confirm("⚠️ PERMANENT ACCOUNT DELETION\n\nAre you sure you want to delete your FlashTalk account?");
-      if (!confirmFirst) return;
-
-      const confirmText = prompt("To confirm deletion, please type 'DELETE' below:");
-      if (confirmText !== "DELETE") {
-        return alert("Account deletion cancelled. You must type 'DELETE' exactly.");
-      }
-
-      try {
-        await supabaseClient.from('profiles').delete().eq('id', currentUser.id);
-        if (supabaseClient) await supabaseClient.auth.signOut();
-        alert("Your account has been deleted.");
-        location.reload();
-      } catch (err) {
-        alert("An error occurred while deleting your account: " + err.message);
-      }
+    function clearPendingAttachment() {
+      pendingAttachment = null;
+      document.getElementById('attachment-preview').style.display = 'none';
+      document.getElementById('chat-file-input').value = '';
     }
 
-    function applyUserSettings() {
-      if (!currentUser || !currentUser.settings) return;
-      const s = currentUser.settings;
-      document.body.className = `font-${s.fontSize || 'medium'} ${s.theme !== 'dark' ? 'theme-' + s.theme : ''}`;
-      document.documentElement.style.setProperty('--accent', s.accentColor || '#6366f1');
-
-      const pfpNav = document.getElementById('nav-user-pfp');
-      if (currentUser.pfp) {
-        pfpNav.innerHTML = `<img src="${escapeHTML(currentUser.pfp)}">`;
-      } else {
-        pfpNav.innerHTML = `<span>${escapeHTML((currentUser.username || 'U').charAt(0).toUpperCase())}</span>`;
-      }
-
-      updateOpUI();
-    }
-
-    function updateOpUI() {
-      const consoleBtn = document.getElementById('op-console-btn');
-      if (consoleBtn) {
-        consoleBtn.style.display = isOpMode ? 'inline-block' : 'none';
-      }
-
-      const opStatus = document.getElementById('op-status-text');
-      if (opStatus) {
-        opStatus.textContent = isOpMode ? "⚡ OP Mode Active" : "User Mode";
-        opStatus.style.color = isOpMode ? "#f59e0b" : "var(--text-main)";
-      }
-    }
-
+    /* TABS & CHAT TARGETS */
     async function switchTab(tab) {
       currentTab = tab;
       const tabNames = ['public', 'discussions', 'groups', 'dms', 'friends', 'search', 'settings'];
-      document.querySelectorAll('.nav-icon').forEach((el, idx) => {
-        el.classList.toggle('active', tabNames[idx] === tab);
-      });
+      document.querySelectorAll('.nav-icon').forEach((el, idx) => el.classList.toggle('active', tabNames[idx] === tab));
 
-      document.getElementById('sidebar-title').textContent = 
-        tab === 'public' ? 'Public Chat' :
-        tab === 'discussions' ? 'Discussions' :
-        tab === 'groups' ? 'Groups' :
-        tab === 'dms' ? 'Direct Messages' :
-        tab === 'friends' ? 'Friends' :
-        tab === 'search' ? 'Search Users' : 'Settings';
-
-      document.getElementById('sidebar-action-btn').style.display = (tab === 'discussions' || tab === 'groups' || tab === 'friends' || tab === 'search') ? 'block' : 'none';
+      document.getElementById('sidebar-title').textContent = tab.toUpperCase();
+      document.getElementById('sidebar-action-btn').style.display = (tab === 'discussions' || tab === 'groups') ? 'block' : 'none';
       document.getElementById('sidebar-search-container').style.display = tab === 'search' ? 'block' : 'none';
       document.getElementById('main-chat').style.display = tab === 'settings' ? 'none' : 'flex';
       document.getElementById('settings-view').style.display = tab === 'settings' ? 'block' : 'none';
 
       if (tab === 'public') selectTarget('public', 'global', 'General Public Chat', 'Everyone can talk here');
-      if (tab === 'settings') populateSettingsForm();
-      
       await loadTabSidebar();
     }
 
     async function loadTabSidebar() {
-      const listContainer = document.getElementById('sidebar-list');
-      listContainer.innerHTML = '';
+      const list = document.getElementById('sidebar-list');
+      list.innerHTML = '';
 
       if (currentTab === 'public') {
-        listContainer.innerHTML = `<div class="list-item active"><div class="title"># General Chat</div></div>`;
+        list.innerHTML = `<div class="list-item active"><div class="title"># General Chat</div></div>`;
       } else if (currentTab === 'discussions') {
-        document.getElementById('sidebar-action-btn').textContent = '+ New';
+        document.getElementById('sidebar-action-btn').textContent = '+ New Thread';
         document.getElementById('sidebar-action-btn').onclick = () => openCreateModal('discussion');
-        const { data } = await supabaseClient.from('discussions').select('*').order('created_at', { ascending: false }).limit(50);
-        discussions = data || [];
-        discussions.forEach(d => {
+        const { data } = await supabaseClient.from('discussions').select('*').order('created_at', { ascending: false });
+        (data || []).forEach(d => {
           const div = document.createElement('div');
           div.className = `list-item ${activeTarget.id === d.id ? 'active' : ''}`;
           div.onclick = () => selectTarget('discussion', d.id, d.title, `By ${d.author_name}`);
-          div.innerHTML = `<div class="title">📌 ${escapeHTML(d.title)}</div><div class="subtitle">By ${escapeHTML(d.author_name)}</div>`;
-          listContainer.appendChild(div);
+          div.innerHTML = `<div class="title">📌 ${escapeHTML(d.title)}</div>`;
+          list.appendChild(div);
         });
       } else if (currentTab === 'groups') {
-        document.getElementById('sidebar-action-btn').textContent = '+ Group';
+        document.getElementById('sidebar-action-btn').textContent = '+ New Group';
         document.getElementById('sidebar-action-btn').onclick = () => openCreateModal('group');
-        const { data } = await supabaseClient.from('groups').select('*').contains('members', [currentUser.id]).limit(50);
+        const { data } = await supabaseClient.from('groups').select('*').contains('members', [currentUser.id]);
         groups = data || [];
         groups.forEach(g => {
+          const unread = unreadCounts.groups[g.id] || 0;
           const div = document.createElement('div');
           div.className = `list-item ${activeTarget.id === g.id ? 'active' : ''}`;
-          div.onclick = () => selectTarget('group', g.id, g.name, `${g.members.length} members`);
-          div.innerHTML = `<div class="title">🔒 ${escapeHTML(g.name)}</div><div class="subtitle">${g.members.length} members</div>`;
-          listContainer.appendChild(div);
+          div.onclick = () => {
+            unreadCounts.groups[g.id] = 0;
+            updateBadges();
+            selectTarget('group', g.id, g.name, `${g.members.length} members`);
+          };
+          div.innerHTML = `<div class="title">🔒 ${escapeHTML(g.name)} ${unread ? `<span class="nav-badge">${unread}</span>` : ''}</div>`;
+          list.appendChild(div);
         });
       } else if (currentTab === 'dms') {
-        const { data } = await supabaseClient.from('profiles').select('*').neq('id', currentUser.id).limit(30);
+        const { data } = await supabaseClient.from('profiles').select('*').neq('id', currentUser.id);
         (data || []).forEach(u => {
           userCache[u.id] = u;
+          const unread = unreadCounts.dms[u.id] || 0;
           const div = document.createElement('div');
           div.className = `list-item ${activeTarget.id === u.id ? 'active' : ''}`;
-          div.innerHTML = `${renderAvatarHTML(u)}<div class="item-info"><div class="title">${escapeHTML(getFormattedUserDisplay(u))}</div></div>`;
-          div.onclick = () => selectTarget('dm', u.id, getFormattedUserDisplay(u), u.bio || '');
-          listContainer.appendChild(div);
+          div.onclick = () => {
+            unreadCounts.dms[u.id] = 0;
+            updateBadges();
+            selectTarget('dm', u.id, `@${u.username}`, u.bio || '');
+          };
+          div.innerHTML = `<div class="avatar-container">${renderAvatarHTML(u)}<div class="status-indicator" data-uid="${u.id}"></div></div>
+            <div class="item-info"><div class="title">@${escapeHTML(u.username)} ${unread ? `<span class="nav-badge">${unread}</span>` : ''}</div></div>`;
+          list.appendChild(div);
         });
+        updatePresenceUI();
       } else if (currentTab === 'friends') {
-        document.getElementById('sidebar-action-btn').textContent = '🔗 Share Link';
-        document.getElementById('sidebar-action-btn').onclick = () => copyInviteLink();
-        const friendIds = currentUser.friends || [];
-        if (friendIds.length > 0) {
-          const { data } = await supabaseClient.from('profiles').select('*').in('id', friendIds);
-          (data || []).forEach(u => {
-            userCache[u.id] = u;
+        const pendingIn = friendRequests.filter(r => r.to_id === currentUser.id && r.status === 'pending');
+        if (pendingIn.length > 0) {
+          const header = document.createElement('div');
+          header.style.padding = '8px'; header.style.fontWeight = 'bold'; header.textContent = 'Pending Requests';
+          list.appendChild(header);
+          for (let req of pendingIn) {
+            const sender = await fetchUserToCache(req.from_id);
             const div = document.createElement('div');
             div.className = 'list-item';
-            div.innerHTML = `${renderAvatarHTML(u)}<div class="item-info"><div class="title">${escapeHTML(getFormattedUserDisplay(u))}</div></div>`;
-            div.onclick = () => { selectTarget('dm', u.id, getFormattedUserDisplay(u), u.bio || ''); switchTab('dms'); };
-            listContainer.appendChild(div);
-          });
-        } else {
-          listContainer.innerHTML = `<div style="padding:12px; color:var(--text-muted); font-size:0.85rem;">No friends added yet.</div>`;
+            div.innerHTML = `<div class="title">@${escapeHTML(sender.username)}</div>
+              <button class="btn btn-sm" onclick="respondFriendRequest('${req.id}', 'accepted')">✓</button>
+              <button class="btn btn-danger btn-sm" onclick="respondFriendRequest('${req.id}', 'declined')">✕</button>`;
+            list.appendChild(div);
+          }
         }
-      } else if (currentTab === 'search') {
-        document.getElementById('sidebar-action-btn').textContent = '🔗 Share Link';
-        document.getElementById('sidebar-action-btn').onclick = () => copyInviteLink();
-        handleSearch(document.getElementById('sidebar-search-input').value);
       }
     }
 
-    function getFormattedUserDisplay(user) {
-      if (!user) return 'Unknown User';
-      const mode = (currentUser.settings && currentUser.settings.displayMode) || 'username';
-      if (mode === 'email') return user.email;
-      if (mode === 'both') return `@${user.username} (${user.email})`;
-      return `@${user.username}`;
-    }
-
-    function renderAvatarHTML(user) {
-      if (user.pfp) return `<img class="avatar" src="${escapeHTML(user.pfp)}">`;
-      return `<div class="avatar">${escapeHTML(user.username ? user.username.charAt(0).toUpperCase() : '?')}</div>`;
-    }
-
-    async function handleSearch(query) {
-      const listContainer = document.getElementById('sidebar-list');
-      listContainer.innerHTML = '';
-      const q = query.toLowerCase().trim();
-
-      if (!q) {
-        listContainer.innerHTML = `<div style="padding:12px; color:var(--text-muted); font-size:0.85rem;">Type to search users...</div>`;
-        return;
-      }
-
-      const { data: users } = await supabaseClient
-        .from('profiles')
-        .select('*')
-        .neq('id', currentUser.id)
-        .or(`username.ilike.%${q}%,email.ilike.%${q}%`)
-        .limit(20);
-
-      if (!users || users.length === 0) {
-        listContainer.innerHTML = `<div style="padding:12px; color:var(--text-muted); font-size:0.85rem;">No users found</div>`;
-        return;
-      }
-
-      users.forEach(u => {
-        userCache[u.id] = u;
+    async function handleSearch(term) {
+      if (!term.trim()) return;
+      const list = document.getElementById('sidebar-list');
+      list.innerHTML = '';
+      const { data } = await supabaseClient.from('profiles').select('*').ilike('username', `%${term}%`).neq('id', currentUser.id);
+      (data || []).forEach(u => {
         const isFriend = (currentUser.friends || []).includes(u.id);
         const div = document.createElement('div');
         div.className = 'list-item';
-        div.innerHTML = `${renderAvatarHTML(u)}<div class="item-info"><div class="title">${escapeHTML(getFormattedUserDisplay(u))}</div></div>
-          <button class="btn ${isFriend ? 'btn-secondary' : ''}" style="width:auto;padding:4px 8px;font-size:0.75rem;" onclick="event.stopPropagation(); toggleFriend('${u.id}')">${isFriend ? 'Unfriend' : '+ Friend'}</button>`;
-        listContainer.appendChild(div);
+        div.innerHTML = `<div class="avatar-container">${renderAvatarHTML(u)}</div>
+          <div class="item-info"><div class="title">@${escapeHTML(u.username)}</div><div class="subtitle">${escapeHTML(u.bio || '')}</div></div>
+          ${!isFriend ? `<button class="btn btn-sm" onclick="sendFriendRequest('${u.id}')">+ Friend</button>` : '<span style="font-size:0.8rem; color:var(--success);">Friends</span>'}`;
+        list.appendChild(div);
       });
-    }
-
-    async function toggleFriend(userId) {
-      let friends = currentUser.friends || [];
-      friends = friends.includes(userId) ? friends.filter(id => id !== userId) : [...friends, userId];
-      currentUser.friends = friends;
-      await supabaseClient.from('profiles').update({ friends }).eq('id', currentUser.id);
-      loadTabSidebar();
     }
 
     async function selectTarget(type, id, title, subtitle) {
       activeTarget = { type, id };
       document.getElementById('target-title').textContent = title;
       document.getElementById('target-subtitle').textContent = subtitle;
+      document.getElementById('group-manage-btn').style.display = type === 'group' ? 'inline-block' : 'none';
       await fetchActiveMessages();
     }
 
     async function fetchActiveMessages() {
       let query = supabaseClient.from('messages').select('*');
-
-      if (activeTarget.type === 'public') {
-        query = query.eq('target_type', 'public');
-      } else if (activeTarget.type === 'dm') {
-        query = query.eq('target_type', 'dm')
-          .or(`and(sender_id.eq.${currentUser.id},target_id.eq.${activeTarget.id}),and(sender_id.eq.${activeTarget.id},target_id.eq.${currentUser.id})`);
-      } else {
-        query = query.eq('target_type', activeTarget.type).eq('target_id', activeTarget.id);
-      }
+      if (activeTarget.type === 'public') query = query.eq('target_type', 'public');
+      else if (activeTarget.type === 'dm') query = query.eq('target_type', 'dm').or(`and(sender_id.eq.${currentUser.id},target_id.eq.${activeTarget.id}),and(sender_id.eq.${activeTarget.id},target_id.eq.${currentUser.id})`);
+      else query = query.eq('target_type', activeTarget.type).eq('target_id', activeTarget.id);
 
       const { data } = await query.order('created_at', { ascending: false }).limit(50);
       messages = (data || []).reverse();
-
-      const senderIds = [...new Set(messages.map(m => m.sender_id))];
-      const uncached = senderIds.filter(id => !userCache[id]);
-      if (uncached.length > 0) {
-        const { data: profiles } = await supabaseClient.from('profiles').select('*').in('id', uncached);
-        (profiles || []).forEach(p => userCache[p.id] = p);
-      }
-
       renderMessages();
     }
 
     function renderMessages() {
       const container = document.getElementById('messages-container');
-      if (!container) return;
       container.innerHTML = '';
       messages.forEach(m => appendSingleMessage(m));
       container.scrollTop = container.scrollHeight;
@@ -906,109 +852,37 @@
 
     function appendSingleMessage(m) {
       const container = document.getElementById('messages-container');
-      if (!container) return;
-
       const isSent = m.sender_id === currentUser.id;
       const senderUser = userCache[m.sender_id] || { username: m.sender_name || 'User' };
-      const formattedTime = formatTime(m.created_at);
 
       const div = document.createElement('div');
-      div.className = `message ${m.is_announcement ? 'announcement' : m.is_system ? 'system' : (isSent ? 'sent' : 'received')}`;
+      div.className = `message ${isSent ? 'sent' : 'received'} ${m.type || ''}`;
       
-      div.innerHTML = `${renderAvatarHTML(senderUser)}
+      let attachmentHTML = '';
+      if (m.attachment) {
+        if (m.attachment.type === 'image') attachmentHTML = `<img src="${m.attachment.data}" class="message-attachment-img" onclick="window.open('${m.attachment.data}')">`;
+        else attachmentHTML = `<a href="${m.attachment.data}" download="${m.attachment.name}" class="message-attachment-file">📁 ${escapeHTML(m.attachment.name)}</a>`;
+      }
+
+      div.innerHTML = `
         <div class="message-content">
-          <div class="message-meta">
-            <span>${isSent ? 'You' : escapeHTML(getFormattedUserDisplay(senderUser))}</span>
-            <span style="font-size:0.7rem; opacity:0.8;">• ${formattedTime}</span>
-          </div>
-          <div class="message-bubble">${escapeHTML(m.text)}</div>
+          <div class="message-meta"><span>${isSent ? 'You' : escapeHTML(senderUser.username)}</span> ${m.is_edited ? '<span>(edited)</span>' : ''}</div>
+          <div class="message-bubble">${parseMarkdown(m.text)} ${attachmentHTML}</div>
+          ${isSent ? `<div class="message-actions">
+            <button class="action-btn" onclick="editMessage('${m.id}')">✏️</button>
+            <button class="action-btn" onclick="deleteMessage('${m.id}')">🗑️</button>
+          </div>` : ''}
         </div>`;
-      
+
       container.appendChild(div);
       container.scrollTop = container.scrollHeight;
     }
 
-    /* AUTOCOMPLETE & SUGGESTION SYSTEM WITH DYNAMIC TAB SCROLLING */
-    function handleInputSuggestions(e) {
-      const input = e.target;
-      const isTerminal = input.id === 'terminal-cmd-input';
-      const box = document.getElementById(isTerminal ? 'terminal-suggestions' : 'chat-suggestions');
-      const val = input.value;
-
-      // Suggestions display ONLY when the user is already in OP Mode
-      if (isOpMode && val.startsWith('/')) {
-        currentSuggestions = OP_COMMANDS.filter(cmd => cmd.toLowerCase().startsWith(val.toLowerCase()));
-        
-        if (currentSuggestions.length > 0) {
-          selectedSuggestionIndex = 0;
-          renderSuggestions(box, input);
-          return;
-        }
-      }
-
-      hideSuggestions(box);
-    }
-
-    function renderSuggestions(box, input) {
-      if (!box) return;
-      box.innerHTML = '';
-      currentSuggestions.forEach((cmd, idx) => {
-        const item = document.createElement('div');
-        item.className = `suggestion-item ${idx === selectedSuggestionIndex ? 'active' : ''}`;
-        item.innerHTML = `<span>${escapeHTML(cmd)}</span> <span style="opacity:0.5; font-size:0.75rem;">Tab ↹</span>`;
-        item.onmousedown = (e) => {
-          e.preventDefault();
-          input.value = cmd + ' ';
-          hideSuggestions(box);
-          input.focus();
-        };
-        box.appendChild(item);
-      });
-      box.style.display = 'block';
-
-      // Keep the highlighted suggestion in view as user scrolls through via Tab
-      const activeItem = box.children[selectedSuggestionIndex];
-      if (activeItem) {
-        const itemTop = activeItem.offsetTop;
-        const itemBottom = itemTop + activeItem.offsetHeight;
-        const boxTop = box.scrollTop;
-        const boxBottom = boxTop + box.clientHeight;
-
-        if (itemTop < boxTop) {
-          box.scrollTop = itemTop;
-        } else if (itemBottom > boxBottom) {
-          box.scrollTop = itemBottom - box.clientHeight;
-        }
-      }
-    }
-
-    function hideSuggestions(box) {
-      if (box) box.style.display = 'none';
-      currentSuggestions = [];
-      selectedSuggestionIndex = 0;
-    }
-
-    function handleInputKeydown(e) {
-      const input = e.target;
-      const box = document.getElementById('chat-suggestions');
-
-      if (e.key === 'Tab' && currentSuggestions.length > 0) {
-        e.preventDefault();
-        input.value = currentSuggestions[selectedSuggestionIndex] + ' ';
-        selectedSuggestionIndex = (selectedSuggestionIndex + 1) % currentSuggestions.length;
-        renderSuggestions(box, input);
-      } else if (e.key === 'Escape') {
-        hideSuggestions(box);
-      }
-    }
-
     async function sendMessage(e) {
       if (e) e.preventDefault();
-      hideSuggestions(document.getElementById('chat-suggestions'));
-
       const input = document.getElementById('message-input');
       const text = input.value.trim();
-      if (!text || !supabaseClient || !currentUser) return;
+      if ((!text && !pendingAttachment) || !currentUser) return;
 
       if (text.startsWith('/')) {
         input.value = '';
@@ -1021,381 +895,275 @@
         return;
       }
 
-      if (!isOpMode && slowmodeSeconds > 0) {
-        const now = Date.now();
-        const elapsed = (now - lastSentTimestamp) / 1000;
-        if (elapsed < slowmodeSeconds) {
-          alert(`Slowmode active. Please wait ${Math.ceil(slowmodeSeconds - elapsed)} seconds before sending another message.`);
-          return;
-        }
-        lastSentTimestamp = now;
-      }
-
-      input.value = '';
-
-      const { data, error } = await supabaseClient.from('messages').insert([{
+      const payload = {
         sender_id: currentUser.id,
         sender_name: currentUser.username,
         target_type: activeTarget.type,
         target_id: activeTarget.id,
-        text: text
-      }]).select();
-
-      if (error) {
-        alert("Failed to send message: " + error.message);
-      } else if (data && data[0]) {
-        messages.push(data[0]);
-        appendSingleMessage(data[0]);
-      }
-    }
-
-    /* OPERATOR COMMAND PARSER & EXECUTOR */
-    async function parseAndExecuteCommand(cmdString, isTerminal = false) {
-      const parts = cmdString.trim().split(/\s+/);
-      const mainCmd = parts[0].toLowerCase();
-
-      const log = (msg, type = '') => {
-        if (isTerminal) {
-          const logBox = document.getElementById('terminal-logs');
-          const div = document.createElement('div');
-          div.className = `terminal-line ${type}`;
-          div.textContent = msg;
-          logBox.appendChild(div);
-          logBox.scrollTop = logBox.scrollHeight;
-        } else {
-          alert(msg);
-        }
+        text: text,
+        attachment: pendingAttachment
       };
 
-      // Handle OP Mode Trigger Commands
-      if (mainCmd === '/enteropmode') {
-        const passwordInput = prompt("Enter Operator Password:");
-        if (passwordInput === null) return;
+      input.value = '';
+      clearPendingAttachment();
 
-        if (passwordInput === opCode) {
-          isOpMode = true;
-          updateOpUI();
-          log("[SYSTEM] Entered OP Mode.", "sys");
-        } else {
-          log("[ERROR] Incorrect Operator Password.", "err");
-        }
-        return;
-      }
+      await supabaseClient.from('messages').insert([payload]);
+    }
 
-      if (mainCmd === '/exitopmode') {
-        if (!isOpMode) {
-          log("[ERROR] You are not currently in OP Mode.", "err");
-          return;
-        }
-        isOpMode = false;
-        updateOpUI();
-        closeTerminalModal();
-        log("[SYSTEM] Exited OP Mode.", "sys");
-        return;
-      }
-
-      if (mainCmd === '/setopcode') {
-        if (!isOpMode) {
-          log("[ERROR] You must be in OP Mode to change the passcode.", "err");
-          return;
-        }
-        const newCode = parts[1] || prompt("Enter new Operator password:");
-        if (newCode && newCode.trim()) {
-          opCode = newCode.trim();
-          localStorage.setItem('op_code', opCode);
-          log("[SUCCESS] Operator password changed successfully.", "sys");
-        }
-        return;
-      }
-
-      // Safeguard for all other Operator commands
-      if (!isOpMode) {
-        log("[ERROR] Unknown command. Type /enteropmode to activate OP Mode.", "err");
-        return;
-      }
-
-      switch (mainCmd) {
-        case '/help':
-          log("--- Operator Commands ---", "sys");
-          log("/clear                     - Clear messages in current channel");
-          log("/user ban <name>           - Permanently ban user");
-          log("/user kick <name>          - Kick user from active channel");
-          log("/mute <name>               - Mute user");
-          log("/unmute <name>             - Unmute user");
-          log("/announce <message>        - Broadcast global announcement");
-          log("/slowmode <seconds>        - Set message cooldown timer");
-          log("/exitopmode                - Exit Operator Mode");
-          log("/setopcode <new_code>      - Change Operator Password");
-          break;
-
-        case '/clear':
-          if (activeTarget.type === 'public') {
-            await supabaseClient.from('messages').delete().eq('target_type', 'public');
-          } else {
-            await supabaseClient.from('messages').delete().eq('target_type', activeTarget.type).eq('target_id', activeTarget.id);
-          }
-          messages = [];
-          renderMessages();
-          log("[SUCCESS] Channel cleared by Operator.", "sys");
-          break;
-
-        case '/announce':
-          const announceMsg = parts.slice(1).join(" ");
-          if (!announceMsg) return log("[ERROR] Usage: /announce <message>", "err");
-          
-          await supabaseClient.from('messages').insert([{
-            sender_id: currentUser.id,
-            sender_name: "ANNOUNCEMENT",
-            target_type: activeTarget.type,
-            target_id: activeTarget.id,
-            text: `📢 ANNOUNCEMENT: ${announceMsg}`,
-            is_announcement: true
-          }]);
-          log("[SUCCESS] Announcement sent.", "sys");
-          break;
-
-        case '/slowmode':
-          const sec = parseInt(parts[1], 10);
-          if (isNaN(sec) || sec < 0) return log("[ERROR] Usage: /slowmode <seconds>", "err");
-          slowmodeSeconds = sec;
-          log(`[SUCCESS] Slowmode set to ${sec} seconds.`, "sys");
-          break;
-
-        case '/user':
-          const userSub = parts[1] ? parts[1].toLowerCase() : '';
-          const targetName = parts[2];
-          if (!targetName) return log("[ERROR] Usage: /user ban <username> OR /user kick <username>", "err");
-
-          const { data: foundUsers } = await supabaseClient.from('profiles').select('*').ilike('username', targetName);
-          if (!foundUsers || foundUsers.length === 0) return log(`[ERROR] User '${targetName}' not found.`, "err");
-
-          const targetUser = foundUsers[0];
-
-          if (userSub === 'ban') {
-            await supabaseClient.from('profiles').update({ is_banned: true }).eq('id', targetUser.id);
-            log(`[SUCCESS] User @${targetUser.username} has been BANNED.`, "sys");
-          } else if (userSub === 'kick') {
-            log(`[SUCCESS] User @${targetUser.username} kicked from session.`, "sys");
-          }
-          break;
-
-        case '/mute':
-          const muteName = parts[1];
-          if (!muteName) return log("[ERROR] Usage: /mute <username>", "err");
-
-          const { data: mUsers } = await supabaseClient.from('profiles').select('*').ilike('username', muteName);
-          if (!mUsers || mUsers.length === 0) return log(`[ERROR] User '${muteName}' not found.`, "err");
-
-          await supabaseClient.from('profiles').update({ is_muted: true }).eq('id', mUsers[0].id);
-          log(`[SUCCESS] User @${mUsers[0].username} has been MUTED.`, "sys");
-          break;
-
-        case '/unmute':
-          const unmuteName = parts[1];
-          if (!unmuteName) return log("[ERROR] Usage: /unmute <username>", "err");
-
-          const { data: uUsers } = await supabaseClient.from('profiles').select('*').ilike('username', unmuteName);
-          if (!uUsers || uUsers.length === 0) return log(`[ERROR] User '${unmuteName}' not found.`, "err");
-
-          await supabaseClient.from('profiles').update({ is_muted: false }).eq('id', uUsers[0].id);
-          log(`[SUCCESS] User @${uUsers[0].username} has been UNMUTED.`, "sys");
-          break;
-
-        default:
-          log(`[ERROR] Unknown command '${mainCmd}'. Type /help for available commands.`, "err");
-          break;
+    async function editMessage(msgId) {
+      const msg = messages.find(m => m.id === msgId);
+      if (!msg) return;
+      const newText = prompt("Edit message:", msg.text);
+      if (newText !== null && newText.trim() !== '') {
+        await supabaseClient.from('messages').update({ text: newText, is_edited: true }).eq('id', msgId);
       }
     }
 
-    /* TERMINAL MODAL HELPERS */
-    function openTerminalModal() {
-      if (!isOpMode) return alert("Operator Mode is not active.");
-      document.getElementById('op-terminal-modal').style.display = 'flex';
-      document.getElementById('terminal-cmd-input').focus();
-    }
-
-    function closeTerminalModal() {
-      document.getElementById('op-terminal-modal').style.display = 'none';
-      hideSuggestions(document.getElementById('terminal-suggestions'));
-    }
-
-    async function handleTerminalKeydown(e) {
-      const input = e.target;
-      const box = document.getElementById('terminal-suggestions');
-
-      if (e.key === 'Tab' && currentSuggestions.length > 0) {
-        e.preventDefault();
-        input.value = currentSuggestions[selectedSuggestionIndex] + ' ';
-        selectedSuggestionIndex = (selectedSuggestionIndex + 1) % currentSuggestions.length;
-        renderSuggestions(box, input);
-        return;
-      } else if (e.key === 'Escape') {
-        hideSuggestions(box);
-        return;
-      }
-
-      if (e.key === 'Enter') {
-        hideSuggestions(box);
-        const cmd = input.value.trim();
-        if (!cmd) return;
-
-        const logBox = document.getElementById('terminal-logs');
-        const line = document.createElement('div');
-        line.className = 'terminal-line';
-        line.textContent = `> ${cmd}`;
-        logBox.appendChild(line);
-
-        input.value = '';
-        await parseAndExecuteCommand(cmd, true);
+    async function deleteMessage(msgId) {
+      if (confirm("Delete this message?")) {
+        await supabaseClient.from('messages').delete().eq('id', msgId);
       }
     }
 
-    function populateSettingsForm() {
-      document.getElementById('settings-username').value = currentUser.username || '';
-      document.getElementById('settings-bio').value = currentUser.bio || '';
-      document.getElementById('share-link-input').value = window.location.href;
+    /* MODAL AND CREATION SYSTEM */
+    async function openCreateModal(type) {
+      activeCreateType = type;
+      const modal = document.getElementById('create-modal');
+      document.getElementById('modal-title').textContent = type === 'group' ? 'Create New Group' : 'Start Discussion Thread';
+      document.getElementById('modal-input-name').value = '';
+      const userSelectionArea = document.getElementById('group-user-selection');
       
-      const s = currentUser.settings || {};
-      document.getElementById('settings-display-mode').value = s.displayMode || 'username';
-      document.getElementById('settings-font-size').value = s.fontSize || 'medium';
-      document.getElementById('settings-theme').value = s.theme || 'dark';
-      document.getElementById('settings-accent-color').value = s.accentColor || '#6366f1';
-
-      if (currentUser.pfp) {
-        document.getElementById('settings-pfp-preview').src = currentUser.pfp;
-        document.getElementById('settings-pfp-preview').style.display = 'block';
-        document.getElementById('settings-pfp-placeholder').style.display = 'none';
-      }
-    }
-
-    function updateBioCount() {
-      const bio = document.getElementById('settings-bio').value;
-      document.getElementById('bio-char-count').textContent = `${bio.length} / 100`;
-    }
-
-    async function saveUserSettings() {
-      currentUser.username = document.getElementById('settings-username').value.trim();
-      currentUser.bio = document.getElementById('settings-bio').value.trim();
-      currentUser.settings = {
-        displayMode: document.getElementById('settings-display-mode').value,
-        fontSize: document.getElementById('settings-font-size').value,
-        theme: document.getElementById('settings-theme').value,
-        accentColor: document.getElementById('settings-accent-color').value
-      };
-
-      if (tempUploadedPFP !== null) {
-        currentUser.pfp = tempUploadedPFP;
-      }
-
-      await supabaseClient.from('profiles').update({ 
-        username: currentUser.username, 
-        bio: currentUser.bio, 
-        settings: currentUser.settings, 
-        pfp: currentUser.pfp 
-      }).eq('id', currentUser.id);
-
-      userCache[currentUser.id] = currentUser;
-      applyUserSettings();
-      alert('Settings saved!');
-    }
-
-    async function handlePFPUpload(e) {
-      const file = e.target.files[0];
-      if (!file) return;
-
-      if (file.size > 2 * 1024 * 1024) {
-        return alert("File size exceeds 2MB limit.");
-      }
-
-      const fileExt = file.name.split('.').pop();
-      const filePath = `${currentUser.id}/${Date.now()}.${fileExt}`;
-
-      const { error: uploadErr } = await supabaseClient.storage
-        .from('avatars')
-        .upload(filePath, file, { upsert: true });
-
-      if (uploadErr) {
-        compressImage(file, (compressedBase64) => {
-          tempUploadedPFP = compressedBase64;
-          showPFPPreview(tempUploadedPFP);
+      if (type === 'group') {
+        userSelectionArea.style.display = 'block';
+        const userListContainer = document.getElementById('modal-user-list');
+        userListContainer.innerHTML = '';
+        const { data: users } = await supabaseClient.from('profiles').select('*').neq('id', currentUser.id);
+        (users || []).forEach(u => {
+          const item = document.createElement('label');
+          item.className = 'user-select-item';
+          item.innerHTML = `<input type="checkbox" value="${u.id}"> <span>@${escapeHTML(u.username)}</span>`;
+          userListContainer.appendChild(item);
         });
       } else {
-        const { data: urlData } = supabaseClient.storage.from('avatars').getPublicUrl(filePath);
-        tempUploadedPFP = urlData.publicUrl;
-        showPFPPreview(tempUploadedPFP);
+        userSelectionArea.style.display = 'none';
       }
-    }
-
-    function compressImage(file, callback) {
-      const reader = new FileReader();
-      reader.onload = (evt) => {
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          let width = img.width, height = img.height;
-          const max = 150;
-          if (width > height) {
-            if (width > max) { height *= max / width; width = max; }
-          } else {
-            if (height > max) { width *= max / height; height = max; }
-          }
-          canvas.width = width; canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, width, height);
-          callback(canvas.toDataURL('image/jpeg', 0.8));
-        };
-        img.src = evt.target.result;
-      };
-      reader.readAsDataURL(file);
-    }
-
-    function showPFPPreview(url) {
-      const preview = document.getElementById('settings-pfp-preview');
-      preview.src = url;
-      preview.style.display = 'block';
-      document.getElementById('settings-pfp-placeholder').style.display = 'none';
-    }
-
-    function removePFP() { 
-      tempUploadedPFP = ''; 
-      currentUser.pfp = '';
-      document.getElementById('settings-pfp-preview').style.display = 'none';
-      document.getElementById('settings-pfp-placeholder').style.display = 'flex';
-    }
-
-    let modalType = '';
-    async function openCreateModal(type) {
-      modalType = type;
-      document.getElementById('create-modal').style.display = 'flex';
-      document.getElementById('modal-input-name').value = '';
-      document.getElementById('group-user-selection').style.display = type === 'group' ? 'block' : 'none';
-
-      if (type === 'group') {
-        const list = document.getElementById('modal-user-list');
-        list.innerHTML = 'Loading users...';
-        const { data: users } = await supabaseClient.from('profiles').select('*').neq('id', currentUser.id).limit(30);
-        list.innerHTML = '';
-        (users || []).forEach(u => {
-          list.innerHTML += `<div class="user-select-item"><input type="checkbox" value="${u.id}" class="g-member"> <span>${escapeHTML(getFormattedUserDisplay(u))}</span></div>`;
-        });
-      }
+      modal.style.display = 'flex';
     }
 
     function closeModal() { document.getElementById('create-modal').style.display = 'none'; }
 
     async function submitModal() {
       const name = document.getElementById('modal-input-name').value.trim();
-      if (!name || !supabaseClient) return;
+      if (!name) return alert("Title / Name is required");
 
-      if (modalType === 'discussion') {
+      if (activeCreateType === 'discussion') {
         await supabaseClient.from('discussions').insert([{ title: name, author_id: currentUser.id, author_name: currentUser.username }]);
-      } else if (modalType === 'group') {
-        const members = Array.from(document.querySelectorAll('.g-member:checked')).map(cb => cb.value);
-        members.push(currentUser.id);
-        await supabaseClient.from('groups').insert([{ name, members }]);
+      } else if (activeCreateType === 'group') {
+        const checkboxes = document.querySelectorAll('#modal-user-list input:checked');
+        const selectedMembers = [currentUser.id];
+        checkboxes.forEach(cb => selectedMembers.push(cb.value));
+        await supabaseClient.from('groups').insert([{ name: name, created_by: currentUser.id, members: selectedMembers }]);
       }
+
       closeModal();
-      await loadTabSidebar();
+      loadTabSidebar();
+    }
+
+    /* GROUP MANAGEMENT */
+    function openGroupManageModal() { document.getElementById('group-manage-modal').style.display = 'flex'; }
+    function closeGroupManageModal() { document.getElementById('group-manage-modal').style.display = 'none'; }
+
+    async function updateGroupName() {
+      const name = document.getElementById('edit-group-name').value.trim();
+      if (name) {
+        await supabaseClient.from('groups').update({ name }).eq('id', activeTarget.id);
+        closeGroupManageModal();
+        loadTabSidebar();
+      }
+    }
+
+    async function leaveGroup() {
+      const g = groups.find(item => item.id === activeTarget.id);
+      if (g) {
+        const updated = g.members.filter(id => id !== currentUser.id);
+        await supabaseClient.from('groups').update({ members: updated }).eq('id', activeTarget.id);
+        closeGroupManageModal();
+        switchTab('public');
+      }
+    }
+
+    /* OPERATOR TERMINAL & COMMAND SUBSYSTEM */
+    function openTerminalModal() { document.getElementById('op-terminal-modal').style.display = 'flex'; }
+    function closeTerminalModal() { document.getElementById('op-terminal-modal').style.display = 'none'; }
+
+    function logTerminal(text, type = '') {
+      const logs = document.getElementById('terminal-logs');
+      const div = document.createElement('div');
+      div.className = `terminal-line ${type}`;
+      div.textContent = text;
+      logs.appendChild(div);
+      logs.scrollTop = logs.scrollHeight;
+    }
+
+    function handleTerminalKeydown(e) {
+      if (e.key === 'Enter') {
+        const input = document.getElementById('terminal-cmd-input');
+        const cmd = input.value.trim();
+        if (cmd) {
+          logTerminal(`> ${cmd}`);
+          parseAndExecuteCommand(cmd, true);
+          input.value = '';
+        }
+      }
+    }
+
+    async function parseAndExecuteCommand(cmdString, fromTerminal = false) {
+      const parts = cmdString.split(' ');
+      const mainCmd = parts[0].toLowerCase();
+
+      if (mainCmd === '/enteropmode') {
+        const pwd = parts[1] || prompt("Enter OP Password:");
+        if (pwd === opCode) {
+          isOpMode = true;
+          document.getElementById('op-console-btn').style.display = 'inline-block';
+          document.getElementById('op-status-text').textContent = 'Operator Mode Active';
+          if (fromTerminal) logTerminal("Operator mode enabled.", "sys");
+          else alert("Operator Mode Enabled.");
+        } else {
+          if (fromTerminal) logTerminal("Invalid password.", "err");
+          else alert("Invalid OP Password.");
+        }
+        return;
+      }
+
+      if (mainCmd === '/exitopmode') {
+        isOpMode = false;
+        document.getElementById('op-console-btn').style.display = 'none';
+        document.getElementById('op-status-text').textContent = 'User Mode';
+        if (fromTerminal) logTerminal("Operator mode exited.", "sys");
+        return;
+      }
+
+      if (!isOpMode) {
+        if (fromTerminal) logTerminal("Access Denied: Not in Operator Mode.", "err");
+        else alert("Command requires Operator Mode.");
+        return;
+      }
+
+      if (mainCmd === '/help') {
+        logTerminal("Available commands:\n" + OP_COMMANDS.join('\n'), "sys");
+      } else if (mainCmd === '/announce') {
+        const msgText = parts.slice(1).join(' ');
+        await supabaseClient.from('messages').insert([{
+          sender_id: currentUser.id, sender_name: 'SYSTEM ANNOUNCEMENT',
+          target_type: activeTarget.type, target_id: activeTarget.id,
+          text: msgText, type: 'announcement'
+        }]);
+        logTerminal("Announcement sent.", "sys");
+      } else if (mainCmd === '/clear') {
+        await supabaseClient.from('messages').delete().eq('target_type', activeTarget.type).eq('target_id', activeTarget.id);
+        messages = [];
+        renderMessages();
+        logTerminal("Cleared target chat history.", "sys");
+      } else if (mainCmd === '/mute') {
+        const username = parts[1];
+        await supabaseClient.from('profiles').update({ is_muted: true }).eq('username', username);
+        logTerminal(`Muted user @${username}`, "sys");
+      } else if (mainCmd === '/unmute') {
+        const username = parts[1];
+        await supabaseClient.from('profiles').update({ is_muted: false }).eq('username', username);
+        logTerminal(`Unmuted user @${username}`, "sys");
+      } else if (mainCmd === '/user' && parts[1] === 'ban') {
+        const username = parts[2];
+        await supabaseClient.from('profiles').update({ is_banned: true }).eq('username', username);
+        logTerminal(`Banned user @${username}`, "sys");
+      } else if (mainCmd === '/setopcode') {
+        const newCode = parts[1];
+        if (newCode) {
+          opCode = newCode;
+          localStorage.setItem('op_code', opCode);
+          logTerminal("OP passcode updated.", "sys");
+        }
+      } else {
+        logTerminal(`Unknown command: ${mainCmd}`, "err");
+      }
+    }
+
+    function renderAvatarHTML(user) {
+      if (user && user.pfp) return `<img class="avatar" src="${escapeHTML(user.pfp)}">`;
+      return `<div class="avatar">${escapeHTML(user && user.username ? user.username.charAt(0).toUpperCase() : '?')}</div>`;
+    }
+
+    async function fetchUserToCache(id) {
+      if (userCache[id]) return userCache[id];
+      const { data } = await supabaseClient.from('profiles').select('*').eq('id', id).single();
+      if (data) userCache[id] = data;
+      return data || { username: 'User' };
+    }
+
+    function toggleAuthMode() {
+      isRegister = !isRegister;
+      document.getElementById('auth-title').textContent = isRegister ? 'Register' : 'Login';
+      document.getElementById('username-group').style.display = isRegister ? 'block' : 'none';
+    }
+
+    async function handleAuth(e) {
+      e.preventDefault();
+      const email = document.getElementById('auth-email').value.trim();
+      const password = document.getElementById('auth-password').value.trim();
+      if (isRegister) {
+        const username = document.getElementById('auth-username').value.trim();
+        await supabaseClient.auth.signUp({ email, password, options: { data: { username } } });
+      } else {
+        await supabaseClient.auth.signInWithPassword({ email, password });
+      }
+    }
+
+    async function logout() { await supabaseClient.auth.signOut(); location.reload(); }
+
+    function handleInputSuggestions(e) {
+      const input = e.target;
+      const isTerminal = input.id === 'terminal-cmd-input';
+      const box = document.getElementById(isTerminal ? 'terminal-suggestions' : 'chat-suggestions');
+      const val = input.value;
+
+      if (isOpMode && val.startsWith('/')) {
+        currentSuggestions = OP_COMMANDS.filter(cmd => cmd.toLowerCase().startsWith(val.toLowerCase()));
+        if (currentSuggestions.length > 0) {
+          selectedSuggestionIndex = 0;
+          renderSuggestions(box, input);
+          return;
+        }
+      }
+      if (box) box.style.display = 'none';
+    }
+
+    function renderSuggestions(box, input) {
+      box.innerHTML = '';
+      currentSuggestions.forEach((cmd, idx) => {
+        const item = document.createElement('div');
+        item.className = `suggestion-item ${idx === selectedSuggestionIndex ? 'active' : ''}`;
+        item.innerHTML = `<span>${escapeHTML(cmd)}</span> <span style="opacity:0.5; font-size:0.75rem;">Tab ↹</span>`;
+        item.onmousedown = (e) => {
+          e.preventDefault();
+          input.value = cmd + ' ';
+          box.style.display = 'none';
+          input.focus();
+        };
+        box.appendChild(item);
+      });
+      box.style.display = 'block';
+    }
+
+    function handleInputKeydown(e) {
+      const input = e.target;
+      const box = document.getElementById('chat-suggestions');
+      if (e.key === 'Tab' && currentSuggestions.length > 0) {
+        e.preventDefault();
+        input.value = currentSuggestions[selectedSuggestionIndex] + ' ';
+        selectedSuggestionIndex = (selectedSuggestionIndex + 1) % currentSuggestions.length;
+        renderSuggestions(box, input);
+      }
     }
   </script>
 </body>
