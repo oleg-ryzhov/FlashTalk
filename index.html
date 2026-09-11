@@ -17,6 +17,7 @@
       --text-muted: #9ca3af;
       --border-color: #374151;
       --danger: #ef4444;
+      --warning: #f59e0b;
       --base-font-size: 14px;
     }
 
@@ -103,6 +104,10 @@
     .message-bubble { padding: 10px 14px; border-radius: 10px; font-size: 0.95rem; line-height: 1.4; word-break: break-word; }
     .message.sent .message-bubble { background: var(--accent); color: white; border-bottom-right-radius: 2px; }
     .message.received .message-bubble { background: var(--bg-panel-light); color: var(--text-main); border-bottom-left-radius: 2px; }
+    .message.announcement .message-bubble { background: #1e1b4b; border: 1px solid #6366f1; color: #e0e7ff; }
+    .message.system .message-bubble { background: #312e81; color: #c7d2fe; font-style: italic; }
+
+    .op-badge { background: #f59e0b; color: #000; font-weight: bold; font-size: 0.65rem; padding: 1px 4px; border-radius: 4px; text-transform: uppercase; }
 
     #message-input-area { padding: 16px; background: var(--bg-panel); border-top: 1px solid var(--border-color); display: flex; gap: 12px; }
     #message-input-area input { flex: 1; padding: 12px 16px; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-main); outline: none; }
@@ -122,6 +127,17 @@
     .modal-card h3 { margin-bottom: 16px; }
     .user-select-list { flex: 1; overflow-y: auto; max-height: 200px; margin: 12px 0; border: 1px solid var(--border-color); border-radius: 6px; padding: 8px; }
     .user-select-item { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 0.9rem; }
+
+    /* Operator Terminal Prompt Styling */
+    #op-terminal-modal .modal-card { width: 650px; background: #0c0c0e; border: 1px solid #10b981; font-family: monospace; }
+    .terminal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #10b981; padding-bottom: 8px; margin-bottom: 12px; color: #10b981; }
+    .terminal-body { background: #000; border: 1px solid #1e293b; height: 260px; overflow-y: auto; padding: 12px; color: #10b981; font-family: monospace; font-size: 0.85rem; margin-bottom: 12px; border-radius: 6px; }
+    .terminal-line { margin-bottom: 4px; white-space: pre-wrap; word-break: break-all; }
+    .terminal-line.err { color: #ef4444; }
+    .terminal-line.sys { color: #f59e0b; }
+    .terminal-input-container { display: flex; gap: 8px; align-items: center; }
+    .terminal-prefix { color: #10b981; font-weight: bold; }
+    .terminal-input-container input { flex: 1; background: #000; border: 1px solid #10b981; color: #10b981; font-family: monospace; padding: 8px 10px; border-radius: 4px; outline: none; }
   </style>
 </head>
 <body>
@@ -179,10 +195,13 @@
             <h3 id="target-title">General Public Chat</h3>
             <p id="target-subtitle" style="font-size: 0.8rem; color: var(--text-muted);">Everyone can talk here</p>
           </div>
+          <button class="btn btn-secondary" style="width: auto; padding: 6px 12px; font-size: 0.85rem;" onclick="openTerminalModal()" title="Operator Command Console">
+            &gt;_ Operator Console
+          </button>
         </div>
         <div id="messages-container"></div>
         <form id="message-input-area" onsubmit="sendMessage(event)">
-          <input type="text" id="message-input" placeholder="Type a message..." required autocomplete="off">
+          <input type="text" id="message-input" placeholder="Type a message or /command..." required autocomplete="off">
           <button type="submit" class="btn">Send</button>
         </form>
       </div>
@@ -217,6 +236,17 @@
             <label for="settings-bio">Bio (Max 100 characters)</label>
             <textarea id="settings-bio" rows="2" maxlength="100" oninput="updateBioCount()"></textarea>
             <div class="bio-counter" id="bio-char-count">0 / 100</div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h4>Operator Controls</h4>
+          <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
+            Operator Status: <strong id="op-status-text" style="color: var(--text-main);">User</strong>
+          </p>
+          <div style="display: flex; gap: 8px;">
+            <input type="password" id="op-passphrase-input" placeholder="Enter Operator Passphrase..." style="flex: 1; padding: 8px 12px; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-size: 0.85rem;">
+            <button type="button" class="btn btn-secondary" style="width: auto; padding: 8px 16px; font-size: 0.85rem; white-space: nowrap;" onclick="loginOperator()">Login OP</button>
           </div>
         </div>
 
@@ -316,9 +346,29 @@
     </div>
   </div>
 
+  <!-- Operator Command Terminal Modal -->
+  <div class="modal" id="op-terminal-modal">
+    <div class="modal-card">
+      <div class="terminal-header">
+        <span>⚡ FlashTalk Operator Control Console v1.0</span>
+        <button type="button" class="btn btn-secondary" style="width: auto; padding: 2px 8px; font-size: 0.75rem;" onclick="closeTerminalModal()">✕ Close</button>
+      </div>
+      <div class="terminal-body" id="terminal-logs">
+        <div class="terminal-line sys">FlashTalk Operator Subsystem Loaded.</div>
+        <div class="terminal-line">Type /help for available operator commands.</div>
+      </div>
+      <div class="terminal-input-container">
+        <span class="terminal-prefix">&gt;</span>
+        <input type="text" id="terminal-cmd-input" placeholder="Enter command (e.g., /help, /clear, /op add john)..." onkeydown="handleTerminalKeydown(event)">
+      </div>
+    </div>
+  </div>
+
   <script>
     const SUPABASE_URL = "https://ssbgkbwnuqxyywgcvvqs.supabase.co";
     const SUPABASE_ANON_KEY = "sb_publishable_R5rjoKAt7A0g384nmmnZiQ_Y5LcKmQy";
+
+    const MASTER_OP_PASSPHRASE = "admin123";
 
     let supabaseClient = null;
     let currentUser = null;
@@ -332,6 +382,9 @@
     let groups = [];
     let messages = [];
     let realtimeChannel = null;
+
+    let slowmodeSeconds = 0;
+    let lastSentTimestamp = 0;
 
     function escapeHTML(str) {
       if (!str) return '';
@@ -396,6 +449,9 @@
           username: authUser.user_metadata?.username || authUser.email.split('@')[0],
           pfp: '',
           bio: '',
+          is_op: false,
+          is_banned: false,
+          is_muted: false,
           friends: [],
           settings: { displayMode: 'username', fontSize: 'medium', theme: 'dark', accentColor: '#6366f1' }
         };
@@ -408,6 +464,13 @@
 
     async function initApp() {
       if (!currentUser) return;
+
+      if (currentUser.is_banned) {
+        alert("Your account has been banned by an Operator.");
+        if (supabaseClient) await supabaseClient.auth.signOut();
+        return;
+      }
+
       document.getElementById('auth-screen').style.display = 'none';
       document.getElementById('app').style.display = 'flex';
 
@@ -587,6 +650,27 @@
       } else {
         pfpNav.innerHTML = `<span>${escapeHTML((currentUser.username || 'U').charAt(0).toUpperCase())}</span>`;
       }
+
+      const opStatus = document.getElementById('op-status-text');
+      if (opStatus) {
+        opStatus.textContent = currentUser.is_op ? "⚡ Operator" : "User";
+        opStatus.style.color = currentUser.is_op ? "#f59e0b" : "var(--text-main)";
+      }
+    }
+
+    async function loginOperator() {
+      const passphrase = document.getElementById('op-passphrase-input').value.trim();
+      if (!passphrase) return alert("Please enter a passphrase.");
+
+      if (passphrase === MASTER_OP_PASSPHRASE) {
+        currentUser.is_op = true;
+        await supabaseClient.from('profiles').update({ is_op: true }).eq('id', currentUser.id);
+        applyUserSettings();
+        alert("Operator authentication successful! You now have operator privileges.");
+        document.getElementById('op-passphrase-input').value = '';
+      } else {
+        alert("Invalid Operator passphrase.");
+      }
     }
 
     async function switchTab(tab) {
@@ -719,7 +803,7 @@
         const isFriend = (currentUser.friends || []).includes(u.id);
         const div = document.createElement('div');
         div.className = 'list-item';
-        div.innerHTML = `${renderAvatarHTML(u)}<div class="item-info"><div class="title">${escapeHTML(getFormattedUserDisplay(u))}</div></div>
+        div.innerHTML = `${renderAvatarHTML(u)}<div class="item-info"><div class="title">${escapeHTML(getFormattedUserDisplay(u))} ${u.is_op ? '<span class="op-badge">OP</span>' : ''}</div></div>
           <button class="btn ${isFriend ? 'btn-secondary' : ''}" style="width:auto;padding:4px 8px;font-size:0.75rem;" onclick="event.stopPropagation(); toggleFriend('${u.id}')">${isFriend ? 'Unfriend' : '+ Friend'}</button>`;
         listContainer.appendChild(div);
       });
@@ -778,16 +862,17 @@
       if (!container) return;
 
       const isSent = m.sender_id === currentUser.id;
-      const senderUser = userCache[m.sender_id] || { username: m.sender_name || 'User' };
+      const senderUser = userCache[m.sender_id] || { username: m.sender_name || 'User', is_op: false };
       const formattedTime = formatTime(m.created_at);
 
       const div = document.createElement('div');
-      div.className = `message ${isSent ? 'sent' : 'received'}`;
+      div.className = `message ${m.is_announcement ? 'announcement' : m.is_system ? 'system' : (isSent ? 'sent' : 'received')}`;
       
       div.innerHTML = `${renderAvatarHTML(senderUser)}
         <div class="message-content">
           <div class="message-meta">
             <span>${isSent ? 'You' : escapeHTML(getFormattedUserDisplay(senderUser))}</span>
+            ${senderUser.is_op ? '<span class="op-badge">OP</span>' : ''}
             <span style="font-size:0.7rem; opacity:0.8;">• ${formattedTime}</span>
           </div>
           <div class="message-bubble">${escapeHTML(m.text)}</div>
@@ -798,10 +883,31 @@
     }
 
     async function sendMessage(e) {
-      e.preventDefault();
+      if (e) e.preventDefault();
       const input = document.getElementById('message-input');
       const text = input.value.trim();
       if (!text || !supabaseClient || !currentUser) return;
+
+      if (text.startsWith('/')) {
+        input.value = '';
+        await parseAndExecuteCommand(text);
+        return;
+      }
+
+      if (currentUser.is_muted) {
+        alert("You are currently muted by an operator.");
+        return;
+      }
+
+      if (!currentUser.is_op && slowmodeSeconds > 0) {
+        const now = Date.now();
+        const elapsed = (now - lastSentTimestamp) / 1000;
+        if (elapsed < slowmodeSeconds) {
+          alert(`Slowmode active. Please wait ${Math.ceil(slowmodeSeconds - elapsed)} seconds before sending another message.`);
+          return;
+        }
+        lastSentTimestamp = now;
+      }
 
       input.value = '';
 
@@ -818,6 +924,181 @@
       } else if (data && data[0]) {
         messages.push(data[0]);
         appendSingleMessage(data[0]);
+      }
+    }
+
+    /* OPERATOR COMMAND PARSER & EXECUTOR */
+    async function parseAndExecuteCommand(cmdString, isTerminal = false) {
+      const parts = cmdString.trim().split(/\s+/);
+      const mainCmd = parts[0].toLowerCase();
+
+      const log = (msg, type = '') => {
+        if (isTerminal) {
+          const logBox = document.getElementById('terminal-logs');
+          const div = document.createElement('div');
+          div.className = `terminal-line ${type}`;
+          div.textContent = msg;
+          logBox.appendChild(div);
+          logBox.scrollTop = logBox.scrollHeight;
+        } else {
+          alert(msg);
+        }
+      };
+
+      if (mainCmd === '/op' && parts[1] === 'login') {
+        const passphrase = parts[2];
+        if (passphrase === MASTER_OP_PASSPHRASE) {
+          currentUser.is_op = true;
+          await supabaseClient.from('profiles').update({ is_op: true }).eq('id', currentUser.id);
+          applyUserSettings();
+          log("[SYSTEM] Authenticated as Operator successfully.", "sys");
+        } else {
+          log("[ERROR] Invalid passphrase.", "err");
+        }
+        return;
+      }
+
+      if (!currentUser.is_op) {
+        log("[ERROR] Permission denied. You must be an Operator to execute commands.", "err");
+        return;
+      }
+
+      switch (mainCmd) {
+        case '/help':
+          log("--- Operator Commands ---", "sys");
+          log("/clear                     - Clear messages in current channel");
+          log("/user ban <name>           - Permanently ban user");
+          log("/user kick <name>          - Kick user from active channel");
+          log("/op add <name>             - Grant operator privileges");
+          log("/op remove <name>          - Revoke operator privileges");
+          log("/mute <name>               - Mute user");
+          log("/unmute <name>             - Unmute user");
+          log("/announce <message>        - Broadcast global announcement");
+          log("/slowmode <seconds>        - Set message cooldown timer");
+          break;
+
+        case '/clear':
+          if (activeTarget.type === 'public') {
+            await supabaseClient.from('messages').delete().eq('target_type', 'public');
+          } else {
+            await supabaseClient.from('messages').delete().eq('target_type', activeTarget.type).eq('target_id', activeTarget.id);
+          }
+          messages = [];
+          renderMessages();
+          log("[SUCCESS] Channel cleared by Operator.", "sys");
+          break;
+
+        case '/announce':
+          const announceMsg = parts.slice(1).join(" ");
+          if (!announceMsg) return log("[ERROR] Usage: /announce <message>", "err");
+          
+          await supabaseClient.from('messages').insert([{
+            sender_id: currentUser.id,
+            sender_name: "ANNOUNCEMENT",
+            target_type: activeTarget.type,
+            target_id: activeTarget.id,
+            text: `📢 ANNOUNCEMENT: ${announceMsg}`,
+            is_announcement: true
+          }]);
+          log("[SUCCESS] Announcement sent.", "sys");
+          break;
+
+        case '/slowmode':
+          const sec = parseInt(parts[1], 10);
+          if (isNaN(sec) || sec < 0) return log("[ERROR] Usage: /slowmode <seconds>", "err");
+          slowmodeSeconds = sec;
+          log(`[SUCCESS] Slowmode set to ${sec} seconds.`, "sys");
+          break;
+
+        case '/op':
+          const opSub = parts[1] ? parts[1].toLowerCase() : '';
+          const opTargetName = parts[2];
+          if (!opTargetName) return log("[ERROR] Usage: /op add <username> OR /op remove <username>", "err");
+
+          const { data: opUsers } = await supabaseClient.from('profiles').select('*').ilike('username', opTargetName);
+          if (!opUsers || opUsers.length === 0) return log(`[ERROR] User '${opTargetName}' not found.`, "err");
+
+          const targetOpUser = opUsers[0];
+
+          if (opSub === 'add') {
+            await supabaseClient.from('profiles').update({ is_op: true }).eq('id', targetOpUser.id);
+            log(`[SUCCESS] Granted Operator privileges to @${targetOpUser.username}.`, "sys");
+          } else if (opSub === 'remove') {
+            await supabaseClient.from('profiles').update({ is_op: false }).eq('id', targetOpUser.id);
+            log(`[SUCCESS] Revoked Operator privileges from @${targetOpUser.username}.`, "sys");
+          }
+          break;
+
+        case '/user':
+          const userSub = parts[1] ? parts[1].toLowerCase() : '';
+          const targetName = parts[2];
+          if (!targetName) return log("[ERROR] Usage: /user ban <username> OR /user kick <username>", "err");
+
+          const { data: foundUsers } = await supabaseClient.from('profiles').select('*').ilike('username', targetName);
+          if (!foundUsers || foundUsers.length === 0) return log(`[ERROR] User '${targetName}' not found.`, "err");
+
+          const targetUser = foundUsers[0];
+
+          if (userSub === 'ban') {
+            await supabaseClient.from('profiles').update({ is_banned: true }).eq('id', targetUser.id);
+            log(`[SUCCESS] User @${targetUser.username} has been BANNED.`, "sys");
+          } else if (userSub === 'kick') {
+            log(`[SUCCESS] User @${targetUser.username} kicked from session.`, "sys");
+          }
+          break;
+
+        case '/mute':
+          const muteName = parts[1];
+          if (!muteName) return log("[ERROR] Usage: /mute <username>", "err");
+
+          const { data: mUsers } = await supabaseClient.from('profiles').select('*').ilike('username', muteName);
+          if (!mUsers || mUsers.length === 0) return log(`[ERROR] User '${muteName}' not found.`, "err");
+
+          await supabaseClient.from('profiles').update({ is_muted: true }).eq('id', mUsers[0].id);
+          log(`[SUCCESS] User @${mUsers[0].username} has been MUTED.`, "sys");
+          break;
+
+        case '/unmute':
+          const unmuteName = parts[1];
+          if (!unmuteName) return log("[ERROR] Usage: /unmute <username>", "err");
+
+          const { data: uUsers } = await supabaseClient.from('profiles').select('*').ilike('username', unmuteName);
+          if (!uUsers || uUsers.length === 0) return log(`[ERROR] User '${unmuteName}' not found.`, "err");
+
+          await supabaseClient.from('profiles').update({ is_muted: false }).eq('id', uUsers[0].id);
+          log(`[SUCCESS] User @${uUsers[0].username} has been UNMUTED.`, "sys");
+          break;
+
+        default:
+          log(`[ERROR] Unknown command '${mainCmd}'. Type /help for available commands.`, "err");
+          break;
+      }
+    }
+
+    /* TERMINAL MODAL HELPERS */
+    function openTerminalModal() {
+      document.getElementById('op-terminal-modal').style.display = 'flex';
+      document.getElementById('terminal-cmd-input').focus();
+    }
+
+    function closeTerminalModal() {
+      document.getElementById('op-terminal-modal').style.display = 'none';
+    }
+
+    async function handleTerminalKeydown(e) {
+      if (e.key === 'Enter') {
+        const input = document.getElementById('terminal-cmd-input');
+        const cmd = input.value.trim();
+        if (!cmd) return;
+
+        const logBox = document.getElementById('terminal-logs');
+        const line = document.createElement('div');
+        line.className = 'terminal-line';
+        line.textContent = `> ${cmd}`;
+        logBox.appendChild(line);
+
+        input.value = '';
+        await parseAndExecuteCommand(cmd, true);
       }
     }
 
