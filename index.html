@@ -928,7 +928,7 @@
       container.scrollTop = container.scrollHeight;
     }
 
-    /* AUTOCOMPLETE & SUGGESTION SYSTEM */
+    /* AUTOCOMPLETE & SUGGESTION SYSTEM WITH DYNAMIC TAB SCROLLING */
     function handleInputSuggestions(e) {
       const input = e.target;
       const isTerminal = input.id === 'terminal-cmd-input';
@@ -965,6 +965,21 @@
         box.appendChild(item);
       });
       box.style.display = 'block';
+
+      // Keep the highlighted suggestion in view as user scrolls through via Tab
+      const activeItem = box.children[selectedSuggestionIndex];
+      if (activeItem) {
+        const itemTop = activeItem.offsetTop;
+        const itemBottom = itemTop + activeItem.offsetHeight;
+        const boxTop = box.scrollTop;
+        const boxBottom = boxTop + box.clientHeight;
+
+        if (itemTop < boxTop) {
+          box.scrollTop = itemTop;
+        } else if (itemBottom > boxBottom) {
+          box.scrollTop = itemBottom - box.clientHeight;
+        }
+      }
     }
 
     function hideSuggestions(box) {
