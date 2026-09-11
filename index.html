@@ -195,7 +195,8 @@
             <h3 id="target-title">General Public Chat</h3>
             <p id="target-subtitle" style="font-size: 0.8rem; color: var(--text-muted);">Everyone can talk here</p>
           </div>
-          <button class="btn btn-secondary" style="width: auto; padding: 6px 12px; font-size: 0.85rem;" onclick="openTerminalModal()" title="Operator Command Console">
+          <!-- Operator Console Button (Hidden by default until OP mode is active) -->
+          <button id="op-console-btn" class="btn btn-secondary" style="width: auto; padding: 6px 12px; font-size: 0.85rem; display: none;" onclick="openTerminalModal()" title="Operator Command Console">
             &gt;_ Operator Console
           </button>
         </div>
@@ -240,14 +241,13 @@
         </div>
 
         <div class="settings-section">
-          <h4>Operator Controls</h4>
-          <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
-            Operator Status: <strong id="op-status-text" style="color: var(--text-main);">User</strong>
+          <h4>Operator Status</h4>
+          <p style="font-size: 0.85rem; color: var(--text-muted);">
+            Status: <strong id="op-status-text" style="color: var(--text-main);">User Mode</strong>
           </p>
-          <div style="display: flex; gap: 8px;">
-            <input type="password" id="op-passphrase-input" placeholder="Enter Operator Passphrase..." style="flex: 1; padding: 8px 12px; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-size: 0.85rem;">
-            <button type="button" class="btn btn-secondary" style="width: auto; padding: 8px 16px; font-size: 0.85rem; white-space: nowrap;" onclick="loginOperator()">Login OP</button>
-          </div>
+          <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 6px;">
+            Type <code>/enteropmode</code> in any chat to enter Operator mode secretly.
+          </p>
         </div>
 
         <div class="settings-section">
@@ -366,9 +366,11 @@
 
   <script>
     const SUPABASE_URL = "https://ssbgkbwnuqxyywgcvvqs.supabase.co";
-    const SUPABASE_ANON_KEY = "sb_publishable_R5rjoKAt7A0g384nmmnZiQ_Y5LcKmQy";
+    const SUPABASE_ANON_KEY = "PASTE_YOUR_FRESH_ANON_KEY_HERE";
 
-    const MASTER_OP_PASSPHRASE = "admin123";
+    // Operator Mode state (Local mode, default password "admin123")
+    let isOpMode = false;
+    let opCode = localStorage.getItem('op_code') || "admin123";
 
     let supabaseClient = null;
     let currentUser = null;
@@ -449,7 +451,6 @@
           username: authUser.user_metadata?.username || authUser.email.split('@')[0],
           pfp: '',
           bio: '',
-          is_op: false,
           is_banned: false,
           is_muted: false,
           friends: [],
@@ -651,25 +652,19 @@
         pfpNav.innerHTML = `<span>${escapeHTML((currentUser.username || 'U').charAt(0).toUpperCase())}</span>`;
       }
 
-      const opStatus = document.getElementById('op-status-text');
-      if (opStatus) {
-        opStatus.textContent = currentUser.is_op ? "⚡ Operator" : "User";
-        opStatus.style.color = currentUser.is_op ? "#f59e0b" : "var(--text-main)";
-      }
+      updateOpUI();
     }
 
-    async function loginOperator() {
-      const passphrase = document.getElementById('op-passphrase-input').value.trim();
-      if (!passphrase) return alert("Please enter a passphrase.");
+    function updateOpUI() {
+      const consoleBtn = document.getElementById('op-console-btn');
+      if (consoleBtn) {
+        consoleBtn.style.display = isOpMode ? 'inline-block' : 'none';
+      }
 
-      if (passphrase === MASTER_OP_PASSPHRASE) {
-        currentUser.is_op = true;
-        await supabaseClient.from('profiles').update({ is_op: true }).eq('id', currentUser.id);
-        applyUserSettings();
-        alert("Operator authentication successful! You now have operator privileges.");
-        document.getElementById('op-passphrase-input').value = '';
-      } else {
-        alert("Invalid Operator passphrase.");
+      const opStatus = document.getElementById('op-status-text');
+      if (opStatus) {
+        opStatus.textContent = isOpMode ? "⚡ OP Mode Active" : "User Mode";
+        opStatus.style.color = isOpMode ? "#f59e0b" : "var(--text-main)";
       }
     }
 
@@ -803,7 +798,7 @@
         const isFriend = (currentUser.friends || []).includes(u.id);
         const div = document.createElement('div');
         div.className = 'list-item';
-        div.innerHTML = `${renderAvatarHTML(u)}<div class="item-info"><div class="title">${escapeHTML(getFormattedUserDisplay(u))} ${u.is_op ? '<span class="op-badge">OP</span>' : ''}</div></div>
+        div.innerHTML = `${renderAvatarHTML(u)}<div class="item-info"><div class="title">${escapeHTML(getFormattedUserDisplay(u))}</div></div>
           <button class="btn ${isFriend ? 'btn-secondary' : ''}" style="width:auto;padding:4px 8px;font-size:0.75rem;" onclick="event.stopPropagation(); toggleFriend('${u.id}')">${isFriend ? 'Unfriend' : '+ Friend'}</button>`;
         listContainer.appendChild(div);
       });
@@ -862,7 +857,7 @@
       if (!container) return;
 
       const isSent = m.sender_id === currentUser.id;
-      const senderUser = userCache[m.sender_id] || { username: m.sender_name || 'User', is_op: false };
+      const senderUser = userCache[m.sender_id] || { username: m.sender_name || 'User' };
       const formattedTime = formatTime(m.created_at);
 
       const div = document.createElement('div');
@@ -872,7 +867,6 @@
         <div class="message-content">
           <div class="message-meta">
             <span>${isSent ? 'You' : escapeHTML(getFormattedUserDisplay(senderUser))}</span>
-            ${senderUser.is_op ? '<span class="op-badge">OP</span>' : ''}
             <span style="font-size:0.7rem; opacity:0.8;">• ${formattedTime}</span>
           </div>
           <div class="message-bubble">${escapeHTML(m.text)}</div>
@@ -895,11 +889,11 @@
       }
 
       if (currentUser.is_muted) {
-        alert("You are currently muted by an operator.");
+        alert("You are currently muted.");
         return;
       }
 
-      if (!currentUser.is_op && slowmodeSeconds > 0) {
+      if (!isOpMode && slowmodeSeconds > 0) {
         const now = Date.now();
         const elapsed = (now - lastSentTimestamp) / 1000;
         if (elapsed < slowmodeSeconds) {
@@ -945,21 +939,50 @@
         }
       };
 
-      if (mainCmd === '/op' && parts[1] === 'login') {
-        const passphrase = parts[2];
-        if (passphrase === MASTER_OP_PASSPHRASE) {
-          currentUser.is_op = true;
-          await supabaseClient.from('profiles').update({ is_op: true }).eq('id', currentUser.id);
-          applyUserSettings();
-          log("[SYSTEM] Authenticated as Operator successfully.", "sys");
+      // Handle OP Mode Trigger Commands
+      if (mainCmd === '/enteropmode') {
+        const passwordInput = prompt("Enter Operator Password:");
+        if (passwordInput === null) return;
+
+        if (passwordInput === opCode) {
+          isOpMode = true;
+          updateOpUI();
+          log("[SYSTEM] Entered OP Mode.", "sys");
         } else {
-          log("[ERROR] Invalid passphrase.", "err");
+          log("[ERROR] Incorrect Operator Password.", "err");
         }
         return;
       }
 
-      if (!currentUser.is_op) {
-        log("[ERROR] Permission denied. You must be an Operator to execute commands.", "err");
+      if (mainCmd === '/exitopmode') {
+        if (!isOpMode) {
+          log("[ERROR] You are not currently in OP Mode.", "err");
+          return;
+        }
+        isOpMode = false;
+        updateOpUI();
+        closeTerminalModal();
+        log("[SYSTEM] Exited OP Mode.", "sys");
+        return;
+      }
+
+      if (mainCmd === '/setopcode') {
+        if (!isOpMode) {
+          log("[ERROR] You must be in OP Mode to change the passcode.", "err");
+          return;
+        }
+        const newCode = parts[1] || prompt("Enter new Operator password:");
+        if (newCode && newCode.trim()) {
+          opCode = newCode.trim();
+          localStorage.setItem('op_code', opCode);
+          log("[SUCCESS] Operator password changed successfully.", "sys");
+        }
+        return;
+      }
+
+      // Safeguard for all other Operator commands
+      if (!isOpMode) {
+        log("[ERROR] Unknown command. Type /enteropmode to activate OP Mode.", "err");
         return;
       }
 
@@ -969,12 +992,12 @@
           log("/clear                     - Clear messages in current channel");
           log("/user ban <name>           - Permanently ban user");
           log("/user kick <name>          - Kick user from active channel");
-          log("/op add <name>             - Grant operator privileges");
-          log("/op remove <name>          - Revoke operator privileges");
           log("/mute <name>               - Mute user");
           log("/unmute <name>             - Unmute user");
           log("/announce <message>        - Broadcast global announcement");
           log("/slowmode <seconds>        - Set message cooldown timer");
+          log("/exitopmode                - Exit Operator Mode");
+          log("/setopcode <new_code>      - Change Operator Password");
           break;
 
         case '/clear':
@@ -1008,25 +1031,6 @@
           if (isNaN(sec) || sec < 0) return log("[ERROR] Usage: /slowmode <seconds>", "err");
           slowmodeSeconds = sec;
           log(`[SUCCESS] Slowmode set to ${sec} seconds.`, "sys");
-          break;
-
-        case '/op':
-          const opSub = parts[1] ? parts[1].toLowerCase() : '';
-          const opTargetName = parts[2];
-          if (!opTargetName) return log("[ERROR] Usage: /op add <username> OR /op remove <username>", "err");
-
-          const { data: opUsers } = await supabaseClient.from('profiles').select('*').ilike('username', opTargetName);
-          if (!opUsers || opUsers.length === 0) return log(`[ERROR] User '${opTargetName}' not found.`, "err");
-
-          const targetOpUser = opUsers[0];
-
-          if (opSub === 'add') {
-            await supabaseClient.from('profiles').update({ is_op: true }).eq('id', targetOpUser.id);
-            log(`[SUCCESS] Granted Operator privileges to @${targetOpUser.username}.`, "sys");
-          } else if (opSub === 'remove') {
-            await supabaseClient.from('profiles').update({ is_op: false }).eq('id', targetOpUser.id);
-            log(`[SUCCESS] Revoked Operator privileges from @${targetOpUser.username}.`, "sys");
-          }
           break;
 
         case '/user':
@@ -1077,6 +1081,7 @@
 
     /* TERMINAL MODAL HELPERS */
     function openTerminalModal() {
+      if (!isOpMode) return alert("Operator Mode is not active.");
       document.getElementById('op-terminal-modal').style.display = 'flex';
       document.getElementById('terminal-cmd-input').focus();
     }
