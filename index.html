@@ -109,11 +109,16 @@
     .message-content { display: flex; flex-direction: column; max-width: 100%; }
     .message.sent .message-content { align-items: flex-end; }
     .message-meta { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px; display: flex; gap: 6px; align-items: center; }
+    .message-time { font-size: 0.7rem; opacity: 0.75; }
     .message-bubble { padding: 10px 14px; border-radius: 10px; font-size: 0.95rem; line-height: 1.4; word-break: break-word; position: relative; }
     .message.sent .message-bubble { background: var(--accent); color: white; border-bottom-right-radius: 2px; }
     .message.received .message-bubble { background: var(--bg-panel-light); color: var(--text-main); border-bottom-left-radius: 2px; }
     .message.announcement .message-bubble { background: #1e1b4b; border: 1px solid #6366f1; color: #e0e7ff; }
     .message.system .message-bubble { background: #312e81; color: #c7d2fe; font-style: italic; }
+
+    .message-reply-quote { background: rgba(0, 0, 0, 0.25); border-left: 3px solid var(--accent); padding: 4px 8px; border-radius: 4px; margin-bottom: 6px; font-size: 0.8rem; }
+    .message-reply-quote .reply-user { font-weight: 600; color: #cbd5e1; }
+    .message-reply-quote .reply-text { color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
     .message-attachment-img { max-width: 260px; max-height: 200px; border-radius: 6px; margin-top: 6px; display: block; cursor: pointer; border: 1px solid rgba(255,255,255,0.1); }
     .message-attachment-file { display: flex; align-items: center; gap: 8px; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 6px; margin-top: 6px; color: var(--text-main); text-decoration: none; font-size: 0.85rem; }
@@ -121,7 +126,19 @@
     .message-actions { display: none; position: absolute; top: -14px; right: 8px; background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 6px; padding: 2px 4px; gap: 4px; z-index: 10; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
     .message.sent .message-actions { left: 8px; right: auto; }
     .message:hover .message-actions { display: flex; }
-    .action-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 2px 4px; font-size: 0.85rem; border-radius: 4px; }
+    
+    .action-btn { 
+      background: none; 
+      border: none; 
+      color: var(--text-muted); 
+      cursor: pointer; 
+      padding: 2px 4px; 
+      font-size: 0.85rem; 
+      border-radius: 4px; 
+      display: inline-flex; 
+      align-items: center; 
+      justify-content: center; 
+    }
     .action-btn:hover { color: var(--text-main); background: var(--bg-panel-light); }
 
     .message-reactions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
@@ -135,6 +152,8 @@
     .reaction-picker-menu span:hover { transform: scale(1.25); }
 
     #typing-bar { height: 22px; padding: 0 20px; font-size: 0.75rem; color: var(--text-muted); font-style: italic; display: flex; align-items: center; }
+
+    .reply-preview-bar { background: var(--bg-panel); border-top: 1px solid var(--border-color); padding: 8px 16px; display: flex; align-items: center; justify-content: space-between; font-size: 0.85rem; color: var(--text-muted); border-left: 3px solid var(--accent); }
 
     #message-input-area { padding: 12px 16px; background: var(--bg-panel); border-top: 1px solid var(--border-color); display: flex; gap: 8px; align-items: center; position: relative; }
 
@@ -268,6 +287,13 @@
         <div id="messages-container"></div>
         
         <div id="typing-bar"></div>
+
+        <div id="reply-preview-bar" class="reply-preview-bar" style="display: none;">
+          <div style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+            Replying to <strong id="reply-target-user"></strong>: <span id="reply-target-text"></span>
+          </div>
+          <button type="button" class="action-btn" onclick="cancelReply()">✕</button>
+        </div>
 
         <form id="message-input-area" onsubmit="sendMessage(event)">
           <div class="attachment-preview" id="attachment-preview">
@@ -440,8 +466,16 @@
     let unreadCounts = { dms: {}, groups: {}, friends: 0 };
 
     let pendingAttachment = null;
+    let replyingTo = null;
     let typingTimeout = null;
     let audioCtx = null;
+
+    function formatTime(timestamp) {
+      if (!timestamp) return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const d = new Date(timestamp);
+      if (isNaN(d.getTime())) return '';
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
 
     function playNotificationChime() {
       try {
@@ -661,7 +695,7 @@
             const optIdx = messages.findIndex(item => !item.id && item.sender_id === m.sender_id && item.text === m.text);
             if (optIdx !== -1) {
               messages[optIdx] = m;
-            } else if (!messages.some(item => item.id === m.id)) {
+            } else if (!messages.some(item => String(item.id) === String(m.id))) {
               messages.push(m);
               appendSingleMessage(m);
             }
@@ -671,14 +705,14 @@
         })
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, (payload) => {
           const m = payload.new;
-          const idx = messages.findIndex(item => item.id === m.id);
+          const idx = messages.findIndex(item => String(item.id) === String(m.id));
           if (idx !== -1) {
             messages[idx] = m;
             renderMessages();
           }
         })
         .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages' }, (payload) => {
-          messages = messages.filter(item => item.id !== payload.old.id);
+          messages = messages.filter(item => String(item.id) !== String(payload.old.id));
           renderMessages();
         })
         .subscribe();
@@ -916,7 +950,7 @@
         const uids = m.reactions[emoji] || [];
         if (uids.length === 0) continue;
         const hasReacted = uids.includes(currentUser ? currentUser.id : '');
-        html += `<span class="reaction-badge ${hasReacted ? 'active' : ''}" onclick="toggleReaction('${m.id}', '${emoji}')">
+        html += `<span class="reaction-badge ${hasReacted ? 'active' : ''}" onclick="event.stopPropagation(); toggleReaction('${m.id}', '${emoji}')">
           ${emoji} ${uids.length}
         </span>`;
       }
@@ -938,26 +972,47 @@
         else attachmentHTML = `<a href="${m.attachment.data}" download="${m.attachment.name}" class="message-attachment-file">📁 ${escapeHTML(m.attachment.name)}</a>`;
       }
 
+      let replyHTML = '';
+      if (m.reply_to) {
+        replyHTML = `
+          <div class="message-reply-quote">
+            <div class="reply-user">Replying to @${escapeHTML(m.reply_to.sender_name)}</div>
+            <div class="reply-text">${escapeHTML(m.reply_to.text || '')}</div>
+          </div>`;
+      }
+
       div.innerHTML = `
         <div class="message-content">
-          <div class="message-meta"><span>${isSent ? 'You' : escapeHTML(senderUser.username)}</span> ${m.is_edited ? '<span>(edited)</span>' : ''}</div>
+          <div class="message-meta">
+            <span>${isSent ? 'You' : escapeHTML(senderUser.username)}</span>
+            <span class="message-time">${formatTime(m.created_at)}</span>
+            ${m.is_edited ? '<span>(edited)</span>' : ''}
+          </div>
           <div class="message-bubble">
+            ${replyHTML}
             ${parseMarkdown(m.text)} 
             ${attachmentHTML}
           </div>
           ${renderReactionsHTML(m)}
           <div class="message-actions">
             <button class="action-btn" onclick="toggleReactionPickerMenu(event, '${m.id}')" title="Add Reaction">😊</button>
+            <button class="action-btn" onclick="copyMessage('${m.id}')" title="Copy Message">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+            </button>
+            <button class="action-btn" onclick="replyToMessage('${m.id}')" title="Reply">↩️</button>
             ${isSent ? `
               <button class="action-btn" onclick="editMessage('${m.id}')" title="Edit Message">✏️</button>
               <button class="action-btn" onclick="deleteMessage('${m.id}')" title="Delete Message">🗑️</button>
             ` : ''}
             <div class="reaction-picker-menu" id="reaction-picker-${m.id}">
-              <span onclick="toggleReaction('${m.id}', '👍')">👍</span>
-              <span onclick="toggleReaction('${m.id}', '❤️')">❤️</span>
-              <span onclick="toggleReaction('${m.id}', '🔥')">🔥</span>
-              <span onclick="toggleReaction('${m.id}', '😂')">😂</span>
-              <span onclick="toggleReaction('${m.id}', '🚀')">🚀</span>
+              <span onclick="event.stopPropagation(); toggleReaction('${m.id}', '👍')">👍</span>
+              <span onclick="event.stopPropagation(); toggleReaction('${m.id}', '❤️')">❤️</span>
+              <span onclick="event.stopPropagation(); toggleReaction('${m.id}', '🔥')">🔥</span>
+              <span onclick="event.stopPropagation(); toggleReaction('${m.id}', '😂')">😂</span>
+              <span onclick="event.stopPropagation(); toggleReaction('${m.id}', '🚀')">🚀</span>
             </div>
           </div>
         </div>`;
@@ -978,7 +1033,7 @@
     }
 
     async function toggleReaction(msgId, emoji) {
-      const msg = messages.find(m => m.id === msgId);
+      const msg = messages.find(m => String(m.id) === String(msgId));
       if (!msg) return;
 
       let reactions = msg.reactions || {};
@@ -999,7 +1054,44 @@
       msg.reactions = reactions;
       renderMessages();
 
-      await supabaseClient.from('messages').update({ reactions }).eq('id', msgId);
+      if (msg.id) {
+        await supabaseClient.from('messages').update({ reactions }).eq('id', msg.id);
+      }
+    }
+
+    function copyMessage(msgId) {
+      const msg = messages.find(m => String(m.id) === String(msgId));
+      if (!msg || !msg.text) return;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(msg.text);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = msg.text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+    }
+
+    function replyToMessage(msgId) {
+      const msg = messages.find(m => String(m.id) === String(msgId));
+      if (!msg) return;
+      const senderUser = userCache[msg.sender_id] || { username: msg.sender_name || 'User' };
+      replyingTo = {
+        id: msg.id,
+        text: msg.text,
+        sender_name: senderUser.username || msg.sender_name || 'User'
+      };
+      document.getElementById('reply-target-user').textContent = '@' + replyingTo.sender_name;
+      document.getElementById('reply-target-text').textContent = replyingTo.text;
+      document.getElementById('reply-preview-bar').style.display = 'flex';
+      document.getElementById('message-input').focus();
+    }
+
+    function cancelReply() {
+      replyingTo = null;
+      document.getElementById('reply-preview-bar').style.display = 'none';
     }
 
     async function sendMessage(e) {
@@ -1026,7 +1118,9 @@
         target_id: activeTarget.id,
         text: text,
         attachment: pendingAttachment,
-        reactions: {}
+        reply_to: replyingTo,
+        reactions: {},
+        created_at: new Date().toISOString()
       };
 
       const currentText = text;
@@ -1034,6 +1128,7 @@
 
       input.value = '';
       clearPendingAttachment();
+      cancelReply();
 
       messages.push(payload);
       appendSingleMessage(payload);
@@ -1052,7 +1147,7 @@
     }
 
     async function editMessage(msgId) {
-      const msg = messages.find(m => m.id === msgId);
+      const msg = messages.find(m => String(m.id) === String(msgId));
       if (!msg) return;
       const newText = prompt("Edit message:", msg.text);
       if (newText !== null && newText.trim() !== '') {
@@ -1124,7 +1219,7 @@
     }
 
     async function leaveGroup() {
-      const g = groups.find(item => item.id === activeTarget.id);
+      const g = groups.find(item => String(item.id) === String(activeTarget.id));
       if (g) {
         const updated = g.members.filter(id => id !== currentUser.id);
         await supabaseClient.from('groups').update({ members: updated }).eq('id', activeTarget.id);
