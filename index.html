@@ -103,10 +103,10 @@
     #chat-header { height: 60px; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; padding: 0 20px; background: var(--bg-panel); }
     #messages-container { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
     
-    .message { display: flex; gap: 10px; max-width: 75%; position: relative; }
+    .message { display: flex; gap: 10px; max-width: 75%; position: relative; padding-top: 6px; }
     .message.sent { align-self: flex-end; flex-direction: row-reverse; }
     .message.received { align-self: flex-start; }
-    .message-content { display: flex; flex-direction: column; max-width: 100%; }
+    .message-content { display: flex; flex-direction: column; max-width: 100%; position: relative; }
     .message.sent .message-content { align-items: flex-end; }
     .message-meta { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px; display: flex; gap: 6px; align-items: center; }
     .message-time { font-size: 0.7rem; opacity: 0.75; }
@@ -123,9 +123,11 @@
     .message-attachment-img { max-width: 260px; max-height: 200px; border-radius: 6px; margin-top: 6px; display: block; cursor: pointer; border: 1px solid rgba(255,255,255,0.1); }
     .message-attachment-file { display: flex; align-items: center; gap: 8px; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 6px; margin-top: 6px; color: var(--text-main); text-decoration: none; font-size: 0.85rem; }
 
+    /* Fix: Stay visible on hover or when picker is active */
     .message-actions { display: none; position: absolute; top: -14px; right: 8px; background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 6px; padding: 2px 4px; gap: 4px; z-index: 10; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
     .message.sent .message-actions { left: 8px; right: auto; }
-    .message:hover .message-actions { display: flex; }
+    .message:hover .message-actions,
+    .message-actions.active { display: flex !important; }
     
     .action-btn { 
       background: none; 
@@ -147,9 +149,23 @@
     .reaction-badge:hover { background: var(--bg-panel-light); color: var(--text-main); }
     .reaction-badge.active { background: rgba(99, 102, 241, 0.2); border-color: var(--accent); color: var(--accent); font-weight: 600; }
 
-    .reaction-picker-menu { display: none; position: absolute; top: -38px; background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 20px; padding: 2px 6px; gap: 4px; z-index: 25; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
-    .reaction-picker-menu span { cursor: pointer; padding: 3px 5px; font-size: 1rem; border-radius: 50%; transition: transform 0.1s; }
-    .reaction-picker-menu span:hover { transform: scale(1.25); }
+    /* Fix: Reaction Picker Positioning and Layering */
+    .reaction-picker-menu { 
+      display: none; 
+      position: absolute; 
+      bottom: calc(100% + 4px); 
+      right: 0;
+      background: var(--bg-panel); 
+      border: 1px solid var(--border-color); 
+      border-radius: 20px; 
+      padding: 4px 8px; 
+      gap: 6px; 
+      z-index: 40; 
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5); 
+    }
+    .message.sent .reaction-picker-menu { left: 0; right: auto; }
+    .reaction-picker-menu span { cursor: pointer; padding: 2px 4px; font-size: 1.1rem; border-radius: 50%; transition: transform 0.1s; }
+    .reaction-picker-menu span:hover { transform: scale(1.3); }
 
     #typing-bar { height: 22px; padding: 0 20px; font-size: 0.75rem; color: var(--text-muted); font-style: italic; display: flex; align-items: center; }
 
@@ -523,7 +539,7 @@
 
     document.addEventListener('DOMContentLoaded', async () => {
       document.addEventListener('click', () => {
-        document.querySelectorAll('.reaction-picker-menu').forEach(el => el.style.display = 'none');
+        closeAllPickers();
       });
 
       if (window.supabase && window.supabase.createClient) {
@@ -543,6 +559,11 @@
         }
       });
     });
+
+    function closeAllPickers() {
+      document.querySelectorAll('.reaction-picker-menu').forEach(el => el.style.display = 'none');
+      document.querySelectorAll('.message-actions').forEach(el => el.classList.remove('active'));
+    }
 
     async function fetchCurrentProfile(authUser) {
       let { data: profile } = await supabaseClient.from('profiles').select('*').eq('id', authUser.id).maybeSingle();
@@ -575,7 +596,6 @@
       switchTab('public');
     }
 
-    /* USER SETTINGS & ACCESSIBILITY */
     function applyUserSettings() {
       if (!currentUser) return;
       const settings = currentUser.settings || { theme: 'dark', fontSize: 'medium' };
@@ -591,7 +611,6 @@
       document.getElementById('settings-theme').value = settings.theme || 'dark';
       document.getElementById('settings-font').value = settings.fontSize || 'medium';
 
-      const initialEl = document.getElementById('nav-user-initial');
       const pfpBtn = document.getElementById('nav-user-pfp');
       if (currentUser.pfp) {
         pfpBtn.innerHTML = `<img src="${escapeHTML(currentUser.pfp)}" alt="Avatar">`;
@@ -622,7 +641,6 @@
       alert("Settings updated successfully!");
     }
 
-    /* PRESENCE & TYPING */
     function subscribePresence() {
       const room = supabaseClient.channel('presence-room', {
         config: { presence: { key: currentUser.id } }
@@ -676,7 +694,6 @@
       }
     }
 
-    /* REALTIME MESSAGES, SOUND ALERTS & BADGES */
     function subscribeRealtimeMessages() {
       supabaseClient.channel('realtime-messages')
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, async (payload) => {
@@ -692,9 +709,14 @@
           }
 
           if (isMsgForActiveTarget(m)) {
-            const optIdx = messages.findIndex(item => !item.id && item.sender_id === m.sender_id && item.text === m.text);
+            const optIdx = messages.findIndex(item => 
+              String(item.id).startsWith('temp-') && 
+              item.sender_id === m.sender_id && 
+              item.text === m.text
+            );
             if (optIdx !== -1) {
               messages[optIdx] = m;
+              renderMessages();
             } else if (!messages.some(item => String(item.id) === String(m.id))) {
               messages.push(m);
               appendSingleMessage(m);
@@ -754,7 +776,6 @@
       return m.target_type === activeTarget.type && m.target_id === activeTarget.id;
     }
 
-    /* FRIEND REQUEST SYSTEM */
     async function fetchFriendRequests() {
       const { data } = await supabaseClient.from('friend_requests').select('*')
         .or(`from_id.eq.${currentUser.id},to_id.eq.${currentUser.id}`);
@@ -783,7 +804,6 @@
       loadTabSidebar();
     }
 
-    /* ATTACHMENT & EMOJI PICKER */
     function toggleEmojiPicker(e) {
       e.stopPropagation();
       const pop = document.getElementById('emoji-popover');
@@ -815,7 +835,6 @@
       document.getElementById('chat-file-input').value = '';
     }
 
-    /* TABS & CHAT TARGETS */
     async function switchTab(tab) {
       currentTab = tab;
       const tabNames = ['public', 'discussions', 'groups', 'dms', 'friends', 'search', 'settings'];
@@ -994,25 +1013,25 @@
             ${attachmentHTML}
           </div>
           ${renderReactionsHTML(m)}
-          <div class="message-actions">
+          <div class="message-actions" id="actions-${m.id}">
             <button class="action-btn" onclick="toggleReactionPickerMenu(event, '${m.id}')" title="Add Reaction">😊</button>
-            <button class="action-btn" onclick="copyMessage('${m.id}')" title="Copy Message">
+            <button class="action-btn" onclick="copyMessage(event, '${m.id}')" title="Copy Message">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
               </svg>
             </button>
-            <button class="action-btn" onclick="replyToMessage('${m.id}')" title="Reply">↩️</button>
+            <button class="action-btn" onclick="replyToMessage(event, '${m.id}')" title="Reply">↩️</button>
             ${isSent ? `
               <button class="action-btn" onclick="editMessage('${m.id}')" title="Edit Message">✏️</button>
               <button class="action-btn" onclick="deleteMessage('${m.id}')" title="Delete Message">🗑️</button>
             ` : ''}
-            <div class="reaction-picker-menu" id="reaction-picker-${m.id}">
-              <span onclick="event.stopPropagation(); toggleReaction('${m.id}', '👍')">👍</span>
-              <span onclick="event.stopPropagation(); toggleReaction('${m.id}', '❤️')">❤️</span>
-              <span onclick="event.stopPropagation(); toggleReaction('${m.id}', '🔥')">🔥</span>
-              <span onclick="event.stopPropagation(); toggleReaction('${m.id}', '😂')">😂</span>
-              <span onclick="event.stopPropagation(); toggleReaction('${m.id}', '🚀')">🚀</span>
+            <div class="reaction-picker-menu" id="reaction-picker-${m.id}" onclick="event.stopPropagation()">
+              <span onclick="toggleReaction('${m.id}', '👍')">👍</span>
+              <span onclick="toggleReaction('${m.id}', '❤️')">❤️</span>
+              <span onclick="toggleReaction('${m.id}', '🔥')">🔥</span>
+              <span onclick="toggleReaction('${m.id}', '😂')">😂</span>
+              <span onclick="toggleReaction('${m.id}', '🚀')">🚀</span>
             </div>
           </div>
         </div>`;
@@ -1023,16 +1042,22 @@
 
     function toggleReactionPickerMenu(e, msgId) {
       e.stopPropagation();
-      document.querySelectorAll('.reaction-picker-menu').forEach(el => {
-        if (el.id !== `reaction-picker-${msgId}`) el.style.display = 'none';
-      });
-      const picker = document.getElementById(`reaction-picker-${msgId}`);
-      if (picker) {
-        picker.style.display = picker.style.display === 'flex' ? 'none' : 'flex';
+      const targetPicker = document.getElementById(`reaction-picker-${msgId}`);
+      const parentActions = document.getElementById(`actions-${msgId}`);
+      
+      const isCurrentlyOpen = targetPicker && targetPicker.style.display === 'flex';
+      
+      closeAllPickers();
+
+      if (!isCurrentlyOpen && targetPicker && parentActions) {
+        targetPicker.style.display = 'flex';
+        parentActions.classList.add('active');
       }
     }
 
     async function toggleReaction(msgId, emoji) {
+      closeAllPickers();
+
       const msg = messages.find(m => String(m.id) === String(msgId));
       if (!msg) return;
 
@@ -1054,27 +1079,34 @@
       msg.reactions = reactions;
       renderMessages();
 
-      if (msg.id) {
+      if (msg.id && !String(msg.id).startsWith('temp-')) {
         await supabaseClient.from('messages').update({ reactions }).eq('id', msg.id);
       }
     }
 
-    function copyMessage(msgId) {
+    function copyMessage(e, msgId) {
+      if (e) e.stopPropagation();
       const msg = messages.find(m => String(m.id) === String(msgId));
       if (!msg || !msg.text) return;
+
       if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(msg.text);
+        navigator.clipboard.writeText(msg.text).catch(() => fallbackCopy(msg.text));
       } else {
-        const ta = document.createElement('textarea');
-        ta.value = msg.text;
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand('copy');
-        document.body.removeChild(ta);
+        fallbackCopy(msg.text);
       }
     }
 
-    function replyToMessage(msgId) {
+    function fallbackCopy(text) {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+
+    function replyToMessage(e, msgId) {
+      if (e) e.stopPropagation();
       const msg = messages.find(m => String(m.id) === String(msgId));
       if (!msg) return;
       const senderUser = userCache[msg.sender_id] || { username: msg.sender_name || 'User' };
@@ -1111,7 +1143,11 @@
         return;
       }
 
+      // Assign temporary ID so copy/reply/reactions work immediately
+      const tempId = `temp-${Date.now()}`;
+
       const payload = {
+        id: tempId,
         sender_id: currentUser.id,
         sender_name: currentUser.username,
         target_type: activeTarget.type,
@@ -1121,6 +1157,18 @@
         reply_to: replyingTo,
         reactions: {},
         created_at: new Date().toISOString()
+      };
+
+      const dbPayload = {
+        sender_id: payload.sender_id,
+        sender_name: payload.sender_name,
+        target_type: payload.target_type,
+        target_id: payload.target_id,
+        text: payload.text,
+        attachment: payload.attachment,
+        reply_to: payload.reply_to,
+        reactions: payload.reactions,
+        created_at: payload.created_at
       };
 
       const currentText = text;
@@ -1133,7 +1181,7 @@
       messages.push(payload);
       appendSingleMessage(payload);
 
-      const { data, error } = await supabaseClient.from('messages').insert([payload]).select();
+      const { data, error } = await supabaseClient.from('messages').insert([dbPayload]).select();
 
       if (error) {
         console.error("Message send failed:", error);
@@ -1141,8 +1189,14 @@
         
         input.value = currentText;
         pendingAttachment = currentAttachment;
-        messages.pop();
+        messages = messages.filter(m => m.id !== tempId);
         renderMessages();
+      } else if (data && data[0]) {
+        const index = messages.findIndex(m => m.id === tempId);
+        if (index !== -1) {
+          messages[index] = data[0];
+          renderMessages();
+        }
       }
     }
 
@@ -1161,7 +1215,6 @@
       }
     }
 
-    /* MODAL AND CREATION SYSTEM */
     async function openCreateModal(type) {
       activeCreateType = type;
       const modal = document.getElementById('create-modal');
@@ -1205,7 +1258,6 @@
       loadTabSidebar();
     }
 
-    /* GROUP MANAGEMENT */
     function openGroupManageModal() { document.getElementById('group-manage-modal').style.display = 'flex'; }
     function closeGroupManageModal() { document.getElementById('group-manage-modal').style.display = 'none'; }
 
@@ -1228,7 +1280,6 @@
       }
     }
 
-    /* OPERATOR TERMINAL & COMMAND SUBSYSTEM */
     function openTerminalModal() { document.getElementById('op-terminal-modal').style.display = 'flex'; }
     function closeTerminalModal() { document.getElementById('op-terminal-modal').style.display = 'none'; }
 
