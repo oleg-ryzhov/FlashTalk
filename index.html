@@ -123,7 +123,6 @@
     .message-attachment-img { max-width: 260px; max-height: 200px; border-radius: 6px; margin-top: 6px; display: block; cursor: pointer; border: 1px solid rgba(255,255,255,0.1); }
     .message-attachment-file { display: flex; align-items: center; gap: 8px; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 6px; margin-top: 6px; color: var(--text-main); text-decoration: none; font-size: 0.85rem; }
 
-    /* Fix: Stay visible on hover or when picker is active */
     .message-actions { display: none; position: absolute; top: -14px; right: 8px; background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 6px; padding: 2px 4px; gap: 4px; z-index: 10; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
     .message.sent .message-actions { left: 8px; right: auto; }
     .message:hover .message-actions,
@@ -149,7 +148,6 @@
     .reaction-badge:hover { background: var(--bg-panel-light); color: var(--text-main); }
     .reaction-badge.active { background: rgba(99, 102, 241, 0.2); border-color: var(--accent); color: var(--accent); font-weight: 600; }
 
-    /* Fix: Reaction Picker Positioning and Layering */
     .reaction-picker-menu { 
       display: none; 
       position: absolute; 
@@ -213,6 +211,9 @@
     #settings-view { flex: 1; padding: 30px; overflow-y: auto; display: none; max-width: 700px; margin: 0 auto; width: 100%; }
     .settings-section { background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 10px; padding: 20px; margin-bottom: 24px; }
     .settings-section h4 { margin-bottom: 16px; font-size: 1.1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 8px; }
+
+    .pfp-preview-container { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
+    .pfp-preview-container img, .pfp-preview-container div.avatar { width: 64px; height: 64px; border-radius: 50%; font-size: 1.5rem; }
 
     .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: none; justify-content: center; align-items: center; z-index: 200; }
     .modal-card { background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 12px; padding: 24px; width: 400px; max-height: 80vh; display: flex; flex-direction: column; }
@@ -352,18 +353,35 @@
 
         <div class="settings-section">
           <h4>Profile Customization</h4>
+
+          <div class="pfp-preview-container">
+            <div id="settings-pfp-preview"></div>
+            <div>
+              <label for="settings-pfp-file" class="btn btn-secondary btn-sm" style="display:inline-block; width:auto; cursor:pointer;">
+                📁 Choose Image from Device
+              </label>
+              <input type="file" id="settings-pfp-file" accept="image/*" style="display:none;" onchange="handlePfpUpload(event)">
+            </div>
+          </div>
+
           <div class="input-group">
             <label for="settings-username">Username</label>
             <input type="text" id="settings-username" required>
           </div>
+
           <div class="input-group">
-            <label for="settings-pfp">Profile Picture URL</label>
-            <input type="text" id="settings-pfp" placeholder="https://example.com/avatar.png">
+            <label for="settings-pfp">Profile Picture URL or Data</label>
+            <input type="text" id="settings-pfp" placeholder="https://example.com/avatar.png" oninput="updatePfpPreview(this.value)">
           </div>
+
           <div class="input-group">
             <label for="settings-bio">Bio (Max 100 characters)</label>
             <textarea id="settings-bio" rows="2" maxlength="100"></textarea>
           </div>
+
+          <button type="button" class="btn btn-secondary" onclick="copyInviteLink()" style="margin-top: 8px;">
+            🔗 Copy Friend Invite Link
+          </button>
         </div>
 
         <div class="settings-section">
@@ -593,7 +611,64 @@
       subscribePresence();
       subscribeRealtimeMessages();
       await fetchFriendRequests();
+      
+      checkInviteURL();
       switchTab('public');
+    }
+
+    function checkInviteURL() {
+      const params = new URLSearchParams(window.location.search);
+      const inviteId = params.get('invite');
+      if (inviteId && inviteId !== currentUser.id) {
+        if (confirm("You opened a friend invite link! Send a friend request now?")) {
+          sendFriendRequest(inviteId);
+        }
+      }
+    }
+
+    function copyInviteLink() {
+      if (!currentUser) return;
+      const inviteUrl = `${window.location.origin}${window.location.pathname}?invite=${currentUser.id}`;
+      
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(inviteUrl).then(() => {
+          alert("Friend invite link copied to clipboard!\n" + inviteUrl);
+        }).catch(() => {
+          fallbackCopy(inviteUrl);
+          alert("Friend invite link copied to clipboard!\n" + inviteUrl);
+        });
+      } else {
+        fallbackCopy(inviteUrl);
+        alert("Friend invite link copied to clipboard!\n" + inviteUrl);
+      }
+    }
+
+    function handlePfpUpload(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      if (file.size > 2 * 1024 * 1024) {
+        alert("Image size should be less than 2MB.");
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        const dataUrl = evt.target.result;
+        document.getElementById('settings-pfp').value = dataUrl;
+        updatePfpPreview(dataUrl);
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function updatePfpPreview(url) {
+      const previewContainer = document.getElementById('settings-pfp-preview');
+      if (url) {
+        previewContainer.innerHTML = `<img src="${escapeHTML(url)}" alt="Avatar Preview" class="avatar">`;
+      } else {
+        const initial = currentUser ? (currentUser.username || 'U').charAt(0).toUpperCase() : 'U';
+        previewContainer.innerHTML = `<div class="avatar">${escapeHTML(initial)}</div>`;
+      }
     }
 
     function applyUserSettings() {
@@ -610,6 +685,8 @@
       document.getElementById('settings-bio').value = currentUser.bio || '';
       document.getElementById('settings-theme').value = settings.theme || 'dark';
       document.getElementById('settings-font').value = settings.fontSize || 'medium';
+
+      updatePfpPreview(currentUser.pfp);
 
       const pfpBtn = document.getElementById('nav-user-pfp');
       if (currentUser.pfp) {
@@ -841,7 +918,7 @@
       document.querySelectorAll('.nav-icon').forEach((el, idx) => el.classList.toggle('active', tabNames[idx] === tab));
 
       document.getElementById('sidebar-title').textContent = tab.toUpperCase();
-      document.getElementById('sidebar-action-btn').style.display = (tab === 'discussions' || tab === 'groups') ? 'block' : 'none';
+      document.getElementById('sidebar-action-btn').style.display = (tab === 'discussions' || tab === 'groups' || tab === 'friends') ? 'block' : 'none';
       document.getElementById('sidebar-search-container').style.display = tab === 'search' ? 'block' : 'none';
       document.getElementById('main-chat').style.display = tab === 'settings' ? 'none' : 'flex';
       document.getElementById('settings-view').style.display = tab === 'settings' ? 'block' : 'none';
@@ -902,6 +979,9 @@
         });
         updatePresenceUI();
       } else if (currentTab === 'friends') {
+        document.getElementById('sidebar-action-btn').textContent = '🔗 Invite';
+        document.getElementById('sidebar-action-btn').onclick = () => copyInviteLink();
+
         const pendingIn = friendRequests.filter(r => r.to_id === currentUser.id && r.status === 'pending');
         if (pendingIn.length > 0) {
           const header = document.createElement('div');
@@ -917,6 +997,32 @@
             list.appendChild(div);
           }
         }
+
+        const friendListHeader = document.createElement('div');
+        friendListHeader.style.padding = '8px'; friendListHeader.style.fontWeight = 'bold'; friendListHeader.textContent = 'My Friends';
+        list.appendChild(friendListHeader);
+
+        const friendIds = currentUser.friends || [];
+        if (friendIds.length === 0) {
+          const empty = document.createElement('div');
+          empty.style.padding = '12px'; empty.style.fontSize = '0.85rem'; empty.style.color = 'var(--text-muted)';
+          empty.textContent = 'No friends added yet. Share your invite link!';
+          list.appendChild(empty);
+        } else {
+          for (let fId of friendIds) {
+            const fUser = await fetchUserToCache(fId);
+            const div = document.createElement('div');
+            div.className = 'list-item';
+            div.onclick = () => {
+              switchTab('dms');
+              selectTarget('dm', fUser.id, `@${fUser.username}`, fUser.bio || '');
+            };
+            div.innerHTML = `<div class="avatar-container">${renderAvatarHTML(fUser)}<div class="status-indicator" data-uid="${fUser.id}"></div></div>
+              <div class="item-info"><div class="title">@${escapeHTML(fUser.username)}</div></div>`;
+            list.appendChild(div);
+          }
+        }
+        updatePresenceUI();
       }
     }
 
@@ -953,13 +1059,6 @@
       const { data } = await query.order('created_at', { ascending: false }).limit(50);
       messages = (data || []).reverse();
       renderMessages();
-    }
-
-    function renderMessages() {
-      const container = document.getElementById('messages-container');
-      container.innerHTML = '';
-      messages.forEach(m => appendSingleMessage(m));
-      container.scrollTop = container.scrollHeight;
     }
 
     function renderReactionsHTML(m) {
@@ -1143,7 +1242,6 @@
         return;
       }
 
-      // Assign temporary ID so copy/reply/reactions work immediately
       const tempId = `temp-${Date.now()}`;
 
       const payload = {
